@@ -1,6 +1,7 @@
 export type VerificationLevel = 'none' | 'basic' | 'intermediate' | 'advanced';
+export type Currency = 'usd' | 'clp';
 export type MeetupType = 'trade' | 'purchase' | 'casual';
-export type MeetupStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
+export type MeetupStatus = 'pending' | 'countered' | 'confirmed' | 'completed' | 'cancelled';
 export type CardCondition = 'mint' | 'near_mint' | 'excellent' | 'good' | 'played' | 'poor';
 export type CardLanguage = 'en' | 'es' | 'jp' | 'pt' | 'fr' | 'de' | 'it' | 'ko' | 'other';
 export type TCGGame = 'pokemon' | 'magic' | 'yugioh' | 'onepiece' | 'digimon' | 'lorcana' | 'other';
@@ -33,10 +34,25 @@ export interface Database {
         Insert: Omit<SafeZone, 'id' | 'created_at'>;
         Update: Partial<Omit<SafeZone, 'id' | 'created_at'>>;
       };
+      meetup_cards: {
+        Row: MeetupCard;
+        Insert: Omit<MeetupCard, 'id' | 'created_at'>;
+        Update: Partial<Omit<MeetupCard, 'id' | 'created_at'>>;
+      };
       meetup_ratings: {
         Row: MeetupRating;
         Insert: Omit<MeetupRating, 'id' | 'created_at'>;
         Update: Partial<Omit<MeetupRating, 'id' | 'created_at'>>;
+      };
+      magic_sets: {
+        Row: MagicSet;
+        Insert: Omit<MagicSet, 'created_at'>;
+        Update: Partial<Omit<MagicSet, 'id' | 'created_at'>>;
+      };
+      magic_cards: {
+        Row: MagicCard;
+        Insert: Omit<MagicCard, 'created_at'>;
+        Update: Partial<Omit<MagicCard, 'id' | 'created_at'>>;
       };
     };
   };
@@ -48,9 +64,11 @@ export interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   bio: string | null;
+  phone: string | null;
   verification_level: VerificationLevel;
   verification_status: 'pending' | 'approved' | 'rejected' | null;
   collection_public: boolean;
+  currency: Currency;
   emergency_contacts: string[] | null;
   created_at: string;
   updated_at: string;
@@ -74,6 +92,41 @@ export interface CardCollection {
   language: CardLanguage | null;
   folder_id: string | null;
   pokemon_card_id: string | null;
+  magic_card_id: string | null;
+  created_at: string;
+}
+
+export interface MagicSet {
+  id: string;
+  name: string;
+  set_type: string | null;
+  released_at: string | null;
+  card_count: number | null;
+  icon_svg_uri: string | null;
+  created_at: string;
+}
+
+export interface MagicCard {
+  id: string;
+  name: string;
+  set_id: string | null;
+  set_name: string;
+  collector_number: string | null;
+  rarity: string | null;
+  type_line: string | null;
+  mana_cost: string | null;
+  cmc: number | null;
+  colors: string[] | null;
+  color_identity: string[] | null;
+  oracle_text: string | null;
+  power: string | null;
+  toughness: string | null;
+  loyalty: string | null;
+  image_url: string | null;
+  image_url_large: string | null;
+  tcgplayer_normal_market: number | null;
+  tcgplayer_foil_market: number | null;
+  price_updated_at: string | null;
   created_at: string;
 }
 
@@ -95,11 +148,22 @@ export interface Meetup {
   custom_location: string | null;
   scheduled_at: string;
   notes: string | null;
+  agreed_price: number | null;
+  counter_notes: string | null;
+  last_modified_by: string | null;
   proposer_checked_in: boolean;
   receiver_checked_in: boolean;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MeetupCard {
+  id: string;
+  meetup_id: string;
+  card_id: string;
+  side: 'proposer' | 'receiver';
+  created_at: string;
 }
 
 export interface SafeZone {

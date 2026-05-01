@@ -40,6 +40,14 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="encuentros"
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} label="Encuentros" icon={focused ? 'people' : 'people-outline'} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           tabBarIcon: ({ focused }) => (

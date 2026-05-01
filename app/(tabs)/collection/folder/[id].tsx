@@ -1,14 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, RefreshControl, Image,
+  SafeAreaView, ActivityIndicator, RefreshControl,
   Dimensions, Modal, Alert, TextInput,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
+import { formatCurrencyValue } from '@/lib/currency';
+import { getUsdToClp } from '@/lib/exchangeRate';
+import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -16,12 +20,18 @@ type CardCollectionWithPrice = CardCollection & {
   pokemon_cards?: { tcgplayer_normal_market: number | null; tcgplayer_foil_market: number | null } | null;
 };
 
-function effectivePrice(card: CardCollectionWithPrice): number {
+function effectivePrice(
+  card: CardCollectionWithPrice,
+  currency: import('@/types/database').Currency,
+  usdToClp: number,
+): number {
   if (card.price_reference != null) return card.price_reference;
   if (card.pokemon_cards) {
     const p = card.pokemon_cards;
-    if (card.is_foil) return p.tcgplayer_foil_market ?? p.tcgplayer_normal_market ?? 0;
-    return p.tcgplayer_normal_market ?? p.tcgplayer_foil_market ?? 0;
+    const usd = card.is_foil
+      ? p.tcgplayer_foil_market ?? p.tcgplayer_normal_market ?? 0
+      : p.tcgplayer_normal_market ?? p.tcgplayer_foil_market ?? 0;
+    return currency === 'clp' ? usd * usdToClp : usd;
   }
   return 0;
 }
@@ -40,7 +50,8 @@ const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string }> = {
 
 export default function FolderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const currency = profile?.currency ?? 'usd';
   const router = useRouter();
 
   const [folder, setFolder] = useState<CollectionFolder | null>(null);
@@ -48,6 +59,7 @@ export default function FolderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [usdToClp, setUsdToClp] = useState(950);
 
   const fetchFolder = useCallback(async () => {
     const { data } = await supabase
@@ -74,6 +86,11 @@ export default function FolderDetailScreen() {
     Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
   }, [fetchFolder, fetchCards]);
 
+  useEffect(() => {
+    if (currency !== 'clp') return;
+    getUsdToClp().then(setUsdToClp);
+  }, [currency]);
+
   async function onRefresh() {
     setRefreshing(true);
     await Promise.all([fetchFolder(), fetchCards()]);
@@ -83,6 +100,7 @@ export default function FolderDetailScreen() {
   async function removeFromFolder(cardId: string) {
     await supabase.from('cards_collection').update({ folder_id: null }).eq('id', cardId);
     setCards(prev => prev.filter(c => c.id !== cardId));
+    requestCollectionRefresh();
   }
 
   function handleCardLongPress(card: CardCollection) {
@@ -143,6 +161,8 @@ export default function FolderDetailScreen() {
             card={item}
             onPress={() => router.push(`/(tabs)/collection/${item.id}`)}
             onLongPress={() => handleCardLongPress(item)}
+            currency={currency}
+            usdToClp={usdToClp}
           />
         )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
@@ -202,7 +222,7 @@ function CardPickerModal({
       .from('cards_collection')
       .select('*')
       .eq('user_id', userId)
-      .neq('folder_id', folderId)
+      .or(`folder_id.is.null,folder_id.neq.${folderId}`)
       .order('card_name', { ascending: true })
       .then(({ data }) => { setAllCards(data ?? []); setLoading(false); });
   }, [visible, userId, folderId]);
@@ -227,6 +247,7 @@ function CardPickerModal({
       .update({ folder_id: folderId })
       .in('id', Array.from(selected));
     setSaving(false);
+    requestCollectionRefresh();
     onAdded();
   }
 
@@ -278,7 +299,7 @@ function CardPickerModal({
                   activeOpacity={0.7}
                 >
                   {item.image_url ? (
-                    <Image source={{ uri: item.image_url }} style={styles.thumbImg} resizeMode="contain" />
+                    <Image source={{ uri: item.image_url }} style={styles.thumbImg} contentFit="contain" />
                   ) : (
                     <View style={styles.thumbPlaceholder}>
                       <Ionicons name={gameIcon.name} size={28} color={gameIcon.color} />
@@ -288,6 +309,11 @@ function CardPickerModal({
                     {item.card_number && <Text style={styles.thumbNum}>#{item.card_number}</Text>}
                     <Text style={styles.thumbName} numberOfLines={1}>{item.card_name}</Text>
                   </View>
+                  {item.quantity > 1 && !isSelected && (
+                    <View style={styles.qtyBadge}>
+                      <Text style={styles.qtyText}>×{item.quantity}</Text>
+                    </View>
+                  )}
                   {isSelected && (
                     <View style={[styles.checkBadge, { backgroundColor: folderColor }]}>
                       <Ionicons name="checkmark" size={12} color="#fff" />
@@ -313,15 +339,19 @@ function CardPickerModal({
 
 // ─── Card item ────────────────────────────────────────────────────────────────
 
-function CardItem({ card, onPress, onLongPress }: {
-  card: CardCollectionWithPrice; onPress: () => void; onLongPress: () => void;
+function CardItem({ card, onPress, onLongPress, currency = 'usd', usdToClp = 950 }: {
+  card: CardCollectionWithPrice;
+  onPress: () => void;
+  onLongPress: () => void;
+  currency?: import('@/types/database').Currency;
+  usdToClp?: number;
 }) {
   const gameIcon = GAME_ICON[card.game];
-  const price = effectivePrice(card);
+  const price = effectivePrice(card, currency, usdToClp);
   return (
     <TouchableOpacity style={styles.thumb} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
       {card.image_url ? (
-        <Image source={{ uri: card.image_url }} style={styles.thumbImg} resizeMode="contain" />
+        <Image source={{ uri: card.image_url }} style={styles.thumbImg} contentFit="contain" />
       ) : (
         <View style={styles.thumbPlaceholder}>
           <Ionicons name={gameIcon.name} size={32} color={gameIcon.color} />
@@ -330,7 +360,7 @@ function CardItem({ card, onPress, onLongPress }: {
       <View style={styles.thumbFooter}>
         {card.card_number && <Text style={styles.thumbNum}>#{card.card_number}</Text>}
         <Text style={styles.thumbName} numberOfLines={1}>{card.card_name}</Text>
-        {price > 0 && <Text style={styles.thumbPrice}>${price % 1 === 0 ? price : price.toFixed(2)}</Text>}
+        {price > 0 && <Text style={styles.thumbPrice}>{formatCurrencyValue(price, currency)}</Text>}
       </View>
       {card.quantity > 1 && (
         <View style={styles.qtyBadge}>

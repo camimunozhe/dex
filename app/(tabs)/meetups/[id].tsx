@@ -99,9 +99,14 @@ export default function MeetupDetailScreen() {
     const field = isProposer ? 'proposer_checked_in' : 'receiver_checked_in';
     await supabase.from('meetups').update({ [field]: true }).eq('id', id);
 
-    // Si ambos hicieron check-in, completar el encuentro
-    const updated = await supabase.from('meetups').select('proposer_checked_in, receiver_checked_in').eq('id', id).single();
-    if (updated.data?.proposer_checked_in && updated.data?.receiver_checked_in) {
+    const { data: updated } = await supabase
+      .from('meetups')
+      .select('proposer_checked_in, receiver_checked_in')
+      .eq('id', id)
+      .single();
+
+    if (updated?.proposer_checked_in && updated?.receiver_checked_in) {
+      await supabase.rpc('transfer_trade_cards', { p_meetup_id: id });
       await supabase.from('meetups').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id);
     }
     await fetchMeetup();

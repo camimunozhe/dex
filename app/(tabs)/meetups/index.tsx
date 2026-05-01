@@ -1,10 +1,11 @@
-import { useCallback, useState, useMemo } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useCallback, useState, useMemo, useRef } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator,
-  Image, Dimensions, ScrollView, Modal,
+  Dimensions, ScrollView, Modal, RefreshControl,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -34,6 +35,11 @@ const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string }> = {
   other: { name: 'albums-outline', color: '#94A3B8' },
 };
 
+const GAME_LOGO: Partial<Record<TCGGame, ReturnType<typeof require>>> = {
+  pokemon: require('../../../assets/pokemon-tcg-logo.png'),
+  magic: require('../../../assets/magic-tcg-logo.png'),
+};
+
 const CONDITION_LABELS: Record<string, string> = {
   mint: 'Mint',
   near_mint: 'Near Mint',
@@ -49,11 +55,15 @@ type ExploreCard = CardCollection & {
 
 export default function ExploreScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const [allCards, setAllCards] = useState<ExploreCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterGame, setFilterGame] = useState<TCGGame | 'all'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'trade' | 'sale'>('all');
   const [selectedCard, setSelectedCard] = useState<ExploreCard | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const isFirstMount = useRef(true);
 
   const fetchCards = useCallback(async () => {
     if (!user) return;
@@ -66,9 +76,18 @@ export default function ExploreScreen() {
     setAllCards((data as ExploreCard[]) ?? []);
   }, [user]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchCards();
+    setRefreshing(false);
+  }, [fetchCards]);
+
   useFocusEffect(useCallback(() => {
-    setLoading(true);
-    fetchCards().finally(() => setLoading(false));
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      setLoading(true);
+      fetchCards().finally(() => setLoading(false));
+    }
   }, [fetchCards]));
 
   const uniqueGames = useMemo(() => new Set(allCards.map(c => c.game as TCGGame)), [allCards]);
@@ -76,16 +95,20 @@ export default function ExploreScreen() {
   const cards = useMemo(() => {
     let result = allCards;
     if (filterGame !== 'all') result = result.filter(c => c.game === filterGame);
+    if (filterType === 'trade') result = result.filter(c => c.is_for_trade);
+    if (filterType === 'sale') result = result.filter(c => c.is_for_sale);
     if (search.trim()) result = result.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()));
     return result;
-  }, [allCards, filterGame, search]);
+  }, [allCards, filterGame, filterType, search]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Explorar</Text>
-          <Text style={styles.subtitle}>{allCards.length} cartas disponibles</Text>
+          <Text style={styles.subtitle}>
+            {allCards.filter(c => c.is_for_trade).length} para intercambio · {allCards.filter(c => c.is_for_sale).length} en venta
+          </Text>
         </View>
       </View>
 
@@ -104,6 +127,8 @@ export default function ExploreScreen() {
               uniqueGames={uniqueGames}
               filterGame={filterGame}
               setFilterGame={setFilterGame}
+              filterType={filterType}
+              setFilterType={setFilterType}
             />
           }
           renderItem={({ item }) => (
@@ -111,14 +136,22 @@ export default function ExploreScreen() {
           )}
           ListEmptyComponent={<EmptyExplore />}
           contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
-          bounces={false}
-          overScrollMode="never"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#6366F1" />
+          }
         />
       )}
 
       <CardDetailModal
         card={selectedCard}
         onClose={() => setSelectedCard(null)}
+        onPropose={(card) => {
+          setSelectedCard(null);
+          router.push({
+            pathname: '/(tabs)/encuentros/nueva',
+            params: { receiver_id: card.user_id, card_id: card.id },
+          });
+        }}
       />
     </SafeAreaView>
   );
@@ -127,13 +160,15 @@ export default function ExploreScreen() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function ExploreHeader({
-  search, onSearchChange, uniqueGames, filterGame, setFilterGame,
+  search, onSearchChange, uniqueGames, filterGame, setFilterGame, filterType, setFilterType,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
   uniqueGames: Set<TCGGame>;
   filterGame: TCGGame | 'all';
   setFilterGame: (g: TCGGame | 'all') => void;
+  filterType: 'all' | 'trade' | 'sale';
+  setFilterType: (t: 'all' | 'trade' | 'sale') => void;
 }) {
   return (
     <>
@@ -144,32 +179,50 @@ function ExploreHeader({
         placeholder="Buscar carta..."
         placeholderTextColor="#475569"
       />
-      {uniqueGames.size > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
+        <TouchableOpacity
+          style={[styles.filterChip, filterType === 'all' && styles.filterChipActive]}
+          onPress={() => setFilterType('all')}
         >
+          <Text style={[styles.filterChipText, filterType === 'all' && styles.filterChipTextActive]}>Todas</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterChip, filterType === 'trade' && styles.filterChipTrade]}
+          onPress={() => setFilterType('trade')}
+        >
+          <Ionicons name="swap-horizontal-outline" size={14} color={filterType === 'trade' ? '#0F172A' : '#22D3EE'} />
+          <Text style={[styles.filterChipText, filterType === 'trade' && styles.filterChipTextTrade]}>Intercambio</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterChip, filterType === 'sale' && styles.filterChipSale]}
+          onPress={() => setFilterType('sale')}
+        >
+          <Ionicons name="pricetag-outline" size={14} color={filterType === 'sale' ? '#0F172A' : '#4ADE80'} />
+          <Text style={[styles.filterChipText, filterType === 'sale' && styles.filterChipTextSale]}>Venta</Text>
+        </TouchableOpacity>
+        {uniqueGames.size > 1 && (
+          <View style={styles.filterDivider} />
+        )}
+        {uniqueGames.size > 1 && (Array.from(uniqueGames) as TCGGame[]).map(g => (
           <TouchableOpacity
-            style={[styles.filterChip, filterGame === 'all' && styles.filterChipActive]}
-            onPress={() => setFilterGame('all')}
+            key={g}
+            style={[styles.filterChip, filterGame === g && styles.filterChipActive]}
+            onPress={() => setFilterGame(filterGame === g ? 'all' : g)}
           >
-            <Text style={[styles.filterChipText, filterGame === 'all' && styles.filterChipTextActive]}>Todas</Text>
+            {GAME_LOGO[g]
+              ? <Image source={GAME_LOGO[g]} style={styles.filterChipLogo} contentFit="contain" />
+              : <Ionicons name={GAME_ICON[g].name} size={15} color={filterGame === g ? '#fff' : GAME_ICON[g].color} />
+            }
+            <Text style={[styles.filterChipText, filterGame === g && styles.filterChipTextActive]}>
+              {GAME_LABELS[g]}
+            </Text>
           </TouchableOpacity>
-          {(Array.from(uniqueGames) as TCGGame[]).map(g => (
-            <TouchableOpacity
-              key={g}
-              style={[styles.filterChip, filterGame === g && styles.filterChipActive]}
-              onPress={() => setFilterGame(g)}
-            >
-              <Ionicons name={GAME_ICON[g].name} size={15} color={filterGame === g ? '#fff' : GAME_ICON[g].color} />
-              <Text style={[styles.filterChipText, filterGame === g && styles.filterChipTextActive]}>
-                {GAME_LABELS[g]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
+        ))}
+      </ScrollView>
     </>
   );
 }
@@ -181,7 +234,7 @@ function CardItem({ card, onPress }: { card: ExploreCard; onPress: () => void })
   return (
     <TouchableOpacity style={styles.thumb} onPress={onPress} activeOpacity={0.7}>
       {card.image_url ? (
-        <Image source={{ uri: card.image_url }} style={styles.thumbImg} resizeMode="contain" />
+        <Image source={{ uri: card.image_url }} style={styles.thumbImg} contentFit="contain" />
       ) : (
         <View style={styles.thumbPlaceholder}>
           <Ionicons name={gameIcon.name} size={32} color={gameIcon.color} />
@@ -206,7 +259,7 @@ function CardItem({ card, onPress }: { card: ExploreCard; onPress: () => void })
 
 // ─── Card detail modal ────────────────────────────────────────────────────────
 
-function CardDetailModal({ card, onClose }: { card: ExploreCard | null; onClose: () => void }) {
+function CardDetailModal({ card, onClose, onPropose }: { card: ExploreCard | null; onClose: () => void; onPropose: (card: ExploreCard) => void }) {
   if (!card) return null;
   const gameIcon = GAME_ICON[card.game];
 
@@ -218,7 +271,7 @@ function CardDetailModal({ card, onClose }: { card: ExploreCard | null; onClose:
 
           <View style={styles.modalContent}>
             {card.image_url ? (
-              <Image source={{ uri: card.image_url }} style={styles.modalImage} resizeMode="contain" />
+              <Image source={{ uri: card.image_url }} style={styles.modalImage} contentFit="contain" />
             ) : (
               <View style={styles.modalImagePlaceholder}>
                 <Ionicons name={gameIcon.name} size={64} color={gameIcon.color} />
@@ -285,12 +338,17 @@ function CardDetailModal({ card, onClose }: { card: ExploreCard | null; onClose:
                   <Ionicons name="person-outline" size={18} color="#64748B" />
                 )}
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.ownerLabel}>Dueño</Text>
                 <Text style={styles.ownerUsername}>@{card.profiles.username}</Text>
               </View>
             </View>
           )}
+
+          <TouchableOpacity style={styles.proposeBtn} onPress={() => onPropose(card)}>
+            <Ionicons name="people-outline" size={18} color="#fff" />
+            <Text style={styles.proposeBtnText}>Proponer encuentro</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -329,8 +387,14 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B',
   },
   filterChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  filterChipTrade: { backgroundColor: '#22D3EE', borderColor: '#22D3EE' },
+  filterChipSale: { backgroundColor: '#4ADE80', borderColor: '#4ADE80' },
+  filterChipLogo: { width: 18, height: 18 },
   filterChipText: { color: '#64748B', fontSize: 13 },
   filterChipTextActive: { color: '#fff' },
+  filterChipTextTrade: { color: '#0F172A', fontWeight: '600' },
+  filterChipTextSale: { color: '#0F172A', fontWeight: '600' },
+  filterDivider: { width: 1, backgroundColor: '#334155', marginVertical: 4, marginHorizontal: 2 },
 
   thumb: {
     width: CARD_WIDTH, margin: 4, alignItems: 'center',
@@ -408,6 +472,11 @@ const styles = StyleSheet.create({
   ownerAvatarImg: { width: 40, height: 40 },
   ownerLabel: { color: '#64748B', fontSize: 11 },
   ownerUsername: { color: '#A5B4FC', fontSize: 15, fontWeight: '700' },
+  proposeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#6366F1', borderRadius: 14, paddingVertical: 14, marginTop: 8,
+  },
+  proposeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, paddingTop: 60 },
   emptyIcon: { marginBottom: 16 },

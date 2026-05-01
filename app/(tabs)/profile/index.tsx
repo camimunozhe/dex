@@ -3,7 +3,10 @@ import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
   Switch, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -17,6 +20,8 @@ export default function ProfileScreen() {
   const [meetupCount, setMeetupCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [savingPublic, setSavingPublic] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -33,6 +38,66 @@ export default function ProfileScreen() {
       setLoading(false);
     });
   }, [user]);
+
+  async function pickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para cambiar la foto.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploadingAvatar(true);
+    try {
+      const asset = result.assets[0];
+      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const path = `${user!.id}/avatar.${ext}`;
+
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await new Response(blob).arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(path, arrayBuffer, {
+          contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user!.id);
+
+      if (updateError) throw updateError;
+
+      await refreshProfile();
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo subir la imagen. Intenta de nuevo.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  async function setCurrency(value: 'usd' | 'clp') {
+    if (savingCurrency || profile?.currency === value) return;
+    setSavingCurrency(true);
+    await supabase.from('profiles').update({ currency: value }).eq('id', user!.id);
+    await refreshProfile();
+    setSavingCurrency(false);
+  }
 
   async function toggleCollectionPublic(value: boolean) {
     setSavingPublic(true);
@@ -66,11 +131,23 @@ export default function ProfileScreen() {
       <ScrollView>
         {/* Header */}
         <View style={styles.hero}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {profile?.username?.[0]?.toUpperCase() ?? '?'}
-            </Text>
-          </View>
+          <TouchableOpacity style={styles.avatarWrap} onPress={pickAvatar} disabled={uploadingAvatar} activeOpacity={0.8}>
+            {profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} contentFit="cover" />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>
+                  {profile?.username?.[0]?.toUpperCase() ?? '?'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.avatarEditBadge}>
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={14} color="#fff" />}
+            </View>
+          </TouchableOpacity>
+
           <Text style={styles.username}>@{profile?.username}</Text>
           {profile?.bio && <Text style={styles.bio}>{profile.bio}</Text>}
 
@@ -125,6 +202,26 @@ export default function ProfileScreen() {
                 trackColor={{ true: '#6366F1' }}
               />
             </View>
+            <View style={[styles.settingRow, { borderBottomWidth: 0 }]}>
+              <View>
+                <Text style={styles.settingLabel}>Divisa</Text>
+                <Text style={styles.settingDesc}>Para mostrar precios en tu colección</Text>
+              </View>
+              <View style={styles.currencyPicker}>
+                {(['usd', 'clp'] as const).map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.currencyBtn, (profile?.currency ?? 'usd') === c && styles.currencyBtnActive]}
+                    onPress={() => setCurrency(c)}
+                    disabled={savingCurrency}
+                  >
+                    <Text style={[styles.currencyBtnText, (profile?.currency ?? 'usd') === c && styles.currencyBtnTextActive]}>
+                      {c.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
 
@@ -172,11 +269,21 @@ function StatBox({ label, value, sub }: { label: string; value: string; sub?: st
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   hero: { alignItems: 'center', padding: 24, paddingBottom: 20 },
-  avatar: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center', marginBottom: 12,
+
+  avatarWrap: { position: 'relative', marginBottom: 12 },
+  avatarImg: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#6366F1' },
+  avatarPlaceholder: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center',
   },
   avatarText: { color: '#fff', fontSize: 32, fontWeight: '800' },
+  avatarEditBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#334155', borderWidth: 2, borderColor: '#0F172A',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
   username: { color: '#F1F5F9', fontSize: 20, fontWeight: '800' },
   bio: { color: '#64748B', fontSize: 14, marginTop: 4, textAlign: 'center' },
   verifyBtn: {
@@ -227,4 +334,13 @@ const styles = StyleSheet.create({
   repLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   repPositiveText: { color: '#4ADE80', fontSize: 12 },
   repNegativeText: { color: '#EF4444', fontSize: 12 },
+  currencyPicker: { flexDirection: 'row', gap: 6 },
+  currencyBtn: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 8, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: '#0F172A',
+  },
+  currencyBtnActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  currencyBtnText: { color: '#64748B', fontSize: 13, fontWeight: '700' },
+  currencyBtnTextActive: { color: '#fff' },
 });

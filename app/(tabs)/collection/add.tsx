@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ScrollView, SafeAreaView, FlatList, Image,
-  ActivityIndicator, Switch, Dimensions,
+  Alert, ScrollView, SafeAreaView, FlatList,
+  ActivityIndicator, Switch, Dimensions, Modal,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useNavigation } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,21 +41,11 @@ type PkmCard = {
 };
 
 type MtgSet = {
-  code: string;
+  id: string;
   name: string;
   set_type: string;
   card_count: number;
   released_at: string;
-};
-
-type MtgCard = {
-  id: string;
-  name: string;
-  collector_number: string;
-  set: string;
-  set_name: string;
-  image_url: string;
-  image_url_large: string;
 };
 
 // ─── Wizard state ─────────────────────────────────────────────────────────────
@@ -65,23 +56,17 @@ type Page =
   | { page: 'sets'; game: TCGGame }
   | { page: 'cards-in-set'; game: TCGGame; setId: string; setName: string }
   | { page: 'search-name'; game: TCGGame }
-  | { page: 'manual'; game: TCGGame }
   | { page: 'confirm'; game: TCGGame; card: PkmCard };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GAMES: { value: TCGGame; label: string; icon: IoniconName; color: string }[] = [
-  { value: 'pokemon', label: 'Pokémon', icon: 'flash-outline', color: '#FACC15' },
-  { value: 'magic', label: 'Magic', icon: 'color-wand-outline', color: '#A78BFA' },
-  { value: 'yugioh', label: 'Yu-Gi-Oh!', icon: 'triangle-outline', color: '#60A5FA' },
-  { value: 'onepiece', label: 'One Piece', icon: 'compass-outline', color: '#F87171' },
-  { value: 'digimon', label: 'Digimon', icon: 'hardware-chip-outline', color: '#34D399' },
-  { value: 'lorcana', label: 'Lorcana', icon: 'flame-outline', color: '#FB923C' },
-  { value: 'other', label: 'Otro', icon: 'albums-outline', color: '#94A3B8' },
+const GAMES: { value: TCGGame; label: string; icon: IoniconName; color: string; image?: ReturnType<typeof require> }[] = [
+  { value: 'pokemon', label: 'Pokémon', icon: 'flash-outline', color: '#FACC15', image: require('../../../assets/pokemon-tcg-logo.png') },
+  { value: 'magic', label: 'Magic', icon: 'color-wand-outline', color: '#A78BFA', image: require('../../../assets/magic-tcg-logo.png') },
 ];
 
 const CONDITIONS: { value: CardCondition; label: string }[] = [
-  { value: 'mint', label: 'Mint' },
+  { value: 'mint', label: 'Nueva' },
   { value: 'near_mint', label: 'Casi Nueva' },
   { value: 'excellent', label: 'Excelente' },
   { value: 'good', label: 'Buena' },
@@ -105,31 +90,6 @@ const CARD_WIDTH = (Dimensions.get('window').width - 16 - 24) / 3; // padding 8*
 
 const MTG_SET_TYPES = new Set(['core', 'expansion', 'masters', 'draft_innovation', 'commander', 'starter']);
 
-async function fetchAllMtgCards(setCode: string): Promise<MtgCard[]> {
-  const cards: MtgCard[] = [];
-  let url: string | null =
-    `https://api.scryfall.com/cards/search?q=set:${setCode}+game:paper&order=set&dir=asc`;
-  while (url) {
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.object === 'error') break;
-    for (const c of json.data) {
-      const uris = c.image_uris ?? c.card_faces?.[0]?.image_uris;
-      cards.push({
-        id: c.id,
-        name: c.name,
-        collector_number: c.collector_number,
-        set: c.set,
-        set_name: c.set_name,
-        image_url: uris?.normal ?? '',
-        image_url_large: uris?.large ?? uris?.normal ?? '',
-      });
-    }
-    url = json.has_more ? json.next_page : null;
-  }
-  return cards;
-}
-
 function getTitle(p: Page): string {
   switch (p.page) {
     case 'game': return 'Agregar carta';
@@ -137,9 +97,73 @@ function getTitle(p: Page): string {
     case 'sets': return 'Elegir set';
     case 'cards-in-set': return p.setName;
     case 'search-name': return 'Buscar por nombre';
-    case 'manual': return 'Ingresar manual';
     case 'confirm': return p.card.name;
   }
+}
+
+// ─── Upsert helper ───────────────────────────────────────────────────────────
+
+type CardInsertRow = {
+  user_id: string;
+  card_name: string;
+  game: TCGGame;
+  set_name: string | null;
+  card_number: string | null;
+  quantity: number;
+  condition: CardCondition;
+  language?: CardLanguage;
+  is_foil: boolean;
+  is_for_trade: boolean;
+  is_for_sale: boolean;
+  price_reference: number | null;
+  image_url: string | null;
+  pokemon_card_id: string | null;
+  folder_id: string | null;
+};
+
+async function upsertCollectionCards(rows: CardInsertRow[]): Promise<{ error: any }> {
+  const pokemonRows = rows.filter(r => r.pokemon_card_id);
+  const otherRows   = rows.filter(r => !r.pokemon_card_id);
+
+  if (pokemonRows.length > 0) {
+    const { data: existing } = await supabase
+      .from('cards_collection')
+      .select('id, pokemon_card_id, condition, is_foil, quantity')
+      .eq('user_id', pokemonRows[0].user_id)
+      .in('pokemon_card_id', pokemonRows.map(r => r.pokemon_card_id!));
+
+    const existingMap = new Map(
+      (existing ?? []).map(e => [`${e.pokemon_card_id}|${e.condition}|${e.is_foil}`, e])
+    );
+
+    const toInsert: CardInsertRow[] = [];
+
+    for (const row of pokemonRows) {
+      const key   = `${row.pokemon_card_id}|${row.condition}|${row.is_foil}`;
+      const match = existingMap.get(key);
+      if (match) {
+        const { error } = await supabase
+          .from('cards_collection')
+          .update({ quantity: match.quantity + row.quantity })
+          .eq('id', match.id);
+        if (error) return { error };
+      } else {
+        toInsert.push(row);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      const { error } = await supabase.from('cards_collection').insert(toInsert);
+      if (error) return { error };
+    }
+  }
+
+  if (otherRows.length > 0) {
+    const { error } = await supabase.from('cards_collection').insert(otherRows);
+    if (error) return { error };
+  }
+
+  return { error: null };
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -151,7 +175,7 @@ export default function AddCardScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const [stack, setStack] = useState<Page[]>([{ page: 'game' }]);
-  const savedRef = useRef(false);
+  const [saved, setSaved] = useState(false);
   const [saveCtx, setSaveCtx] = useState<SaveCtx | null>(null);
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
   const [folderPickerVisible, setFolderPickerVisible] = useState(false);
@@ -186,9 +210,13 @@ export default function AddCardScreen() {
   }, [navigation, inWizard]);
 
   // Maneja el botón back de Android (hardware)
-  usePreventRemove(inWizard && !savedRef.current, () => {
+  usePreventRemove(inWizard && !saved, () => {
     setStack(s => s.slice(0, -1));
   });
+
+  useEffect(() => {
+    if (saved) router.back();
+  }, [saved]);
 
   function push(page: Page) {
     setStack(s => [...s, page]);
@@ -200,9 +228,8 @@ export default function AddCardScreen() {
   }
 
   function onSave() {
-    savedRef.current = true;
     requestCollectionRefresh();
-    router.back();
+    setSaved(true);
   }
 
   return (
@@ -248,7 +275,6 @@ export default function AddCardScreen() {
           game={current.game}
           onSet={() => push({ page: 'sets', game: current.game })}
           onName={() => push({ page: 'search-name', game: current.game })}
-          onManual={() => push({ page: 'manual', game: current.game })}
         />
       )}
       {current.page === 'sets' && (
@@ -271,13 +297,14 @@ export default function AddCardScreen() {
       )}
       {current.page === 'search-name' && (
         <SearchNameStep
-          onSelect={(card) => push({ page: 'confirm', game: current.game, card })}
+          game={current.game}
+          userId={user!.id}
+          onSave={onSave}
+          onCtxChange={setSaveCtx}
+          pickFolder={pickFolder}
         />
       )}
-      {current.page === 'manual' && (
-        <ManualStep game={current.game} userId={user!.id} onSave={onSave} pickFolder={pickFolder} />
-      )}
-      {current.page === 'confirm' && (
+{current.page === 'confirm' && (
         <ConfirmStep game={current.game} card={current.card} userId={user!.id} onSave={onSave} pickFolder={pickFolder} />
       )}
     </SafeAreaView>
@@ -292,8 +319,10 @@ function GameStep({ onSelect }: { onSelect: (g: TCGGame) => void }) {
       <Text style={styles.hint}>¿Qué juego quieres agregar?</Text>
       {GAMES.map((g) => (
         <TouchableOpacity key={g.value} style={styles.bigCard} onPress={() => onSelect(g.value)}>
-          <View style={[styles.bigCardIcon, { backgroundColor: g.color + '1A' }]}>
-            <Ionicons name={g.icon} size={30} color={g.color} />
+          <View style={[styles.bigCardIcon, { backgroundColor: g.image ? '#fff' : g.color + '1A' }]}>
+            {g.image
+              ? <Image source={g.image} style={{ width: 36, height: 36 }} contentFit="contain" />
+              : <Ionicons name={g.icon} size={30} color={g.color} />}
           </View>
           <Text style={styles.bigCardLabel}>{g.label}</Text>
           <Ionicons name="chevron-forward" size={18} color="#475569" />
@@ -306,33 +335,20 @@ function GameStep({ onSelect }: { onSelect: (g: TCGGame) => void }) {
 // ─── Step: Method ─────────────────────────────────────────────────────────────
 
 function MethodStep({
-  game, onSet, onName, onManual,
+  game, onSet, onName,
 }: {
   game: TCGGame;
   onSet: () => void;
   onName: () => void;
-  onManual: () => void;
 }) {
-  const hasSetBrowse = game === 'pokemon' || game === 'magic';
   const hasNameSearch = game === 'pokemon';
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad}>
       <Text style={styles.hint}>¿Cómo quieres buscar la carta?</Text>
-      {hasSetBrowse ? (
-        <>
-          <MethodOption icon="albums-outline" label="Por Set" desc="Explora las expansiones y elige una carta del set" onPress={onSet} />
-          {hasNameSearch && (
-            <MethodOption icon="search-outline" label="Por nombre" desc="Busca directamente por nombre de la carta" onPress={onName} />
-          )}
-        </>
-      ) : (
-        <View style={styles.soonBox}>
-          <Ionicons name="time-outline" size={36} color="#334155" />
-          <Text style={styles.soonTitle}>API próximamente</Text>
-          <Text style={styles.soonText}>La búsqueda automática para este juego estará disponible pronto.</Text>
-        </View>
+      <MethodOption icon="albums-outline" label="Por Set" desc="Explora las expansiones y elige una carta del set" onPress={onSet} />
+      {hasNameSearch && (
+        <MethodOption icon="search-outline" label="Por nombre" desc="Busca directamente por nombre de la carta" onPress={onName} />
       )}
-      <MethodOption icon="create-outline" label="Ingresar manual" desc="Escribe los datos de la carta tú mismo" onPress={onManual} muted />
     </ScrollView>
   );
 }
@@ -402,7 +418,7 @@ function PokemonSetsStep({ onSelect }: { onSelect: (id: string, name: string) =>
         keyExtractor={s => s.id}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.setRow} onPress={() => onSelect(item.id, item.name)}>
-            <Image source={{ uri: item.symbol_url }} style={styles.setSymbol} resizeMode="contain" />
+            <Image source={{ uri: item.symbol_url }} style={styles.setSymbol} contentFit="contain" />
             <View style={{ flex: 1 }}>
               <Text style={styles.setName}>{item.name}</Text>
               <Text style={styles.setMeta}>{item.series} · {item.total} cartas</Text>
@@ -428,23 +444,25 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('https://api.scryfall.com/sets')
-      .then(r => r.json())
-      .then(json => {
-        const relevant = (json.data as MtgSet[])
-          .filter(s => MTG_SET_TYPES.has(s.set_type) && s.card_count > 0 && s.released_at)
-          .sort((a, b) => b.released_at.localeCompare(a.released_at));
-        setSets(relevant);
-        setFiltered(relevant);
+    supabase
+      .from('magic_sets')
+      .select('id, name, set_type, card_count, released_at')
+      .in('set_type', Array.from(MTG_SET_TYPES))
+      .gt('card_count', 0)
+      .not('released_at', 'is', null)
+      .order('released_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) Alert.alert('Error', 'No se pudo cargar los sets de Magic');
+        setSets((data ?? []) as MtgSet[]);
+        setFiltered((data ?? []) as MtgSet[]);
         setLoading(false);
-      })
-      .catch(() => { Alert.alert('Error', 'No se pudo cargar los sets de Magic'); setLoading(false); });
+      });
   }, []);
 
   useEffect(() => {
     if (!search.trim()) { setFiltered(sets); return; }
     const q = search.toLowerCase();
-    setFiltered(sets.filter(s => s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)));
+    setFiltered(sets.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)));
   }, [search, sets]);
 
   if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#A78BFA" />;
@@ -460,11 +478,11 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
       />
       <FlatList
         data={filtered}
-        keyExtractor={s => s.code}
+        keyExtractor={s => s.id}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.setRow} onPress={() => onSelect(item.code, item.name)}>
+          <TouchableOpacity style={styles.setRow} onPress={() => onSelect(item.id, item.name)}>
             <View style={styles.mtgSetCode}>
-              <Text style={styles.mtgSetCodeText}>{item.code.toUpperCase()}</Text>
+              <Text style={styles.mtgSetCodeText}>{item.id.toUpperCase()}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.setName}>{item.name}</Text>
@@ -496,29 +514,38 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Map<string, Selection>>(new Map());
-  const [condition, setCondition] = useState<CardCondition>('near_mint');
+  const [condition, setCondition] = useState<CardCondition>('mint');
   const [language, setLanguage] = useState<CardLanguage>('en');
   const [saving, setSaving] = useState(false);
   const saveRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (game === 'magic') {
-      fetchAllMtgCards(setId)
-        .then(data => {
-          const sorted = data.sort((a, b) => {
-            const na = parseInt(a.collector_number, 10);
-            const nb = parseInt(b.collector_number, 10);
+      supabase
+        .from('magic_cards')
+        .select('id, name, collector_number, set_id, set_name, image_url, image_url_large, tcgplayer_normal_market, tcgplayer_foil_market')
+        .eq('set_id', setId)
+        .then(({ data, error }) => {
+          if (error) Alert.alert('Error', 'No se pudo cargar las cartas');
+          const sorted = (data ?? []).sort((a, b) => {
+            const na = parseInt(a.collector_number ?? '', 10);
+            const nb = parseInt(b.collector_number ?? '', 10);
             if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
-            return a.collector_number.localeCompare(b.collector_number);
+            return (a.collector_number ?? '').localeCompare(b.collector_number ?? '');
           });
           setCards(sorted.map(c => ({
-            id: c.id, name: c.name, number: c.collector_number,
-            set_id: c.set, set_name: c.set_name,
-            image_url: c.image_url, image_url_large: c.image_url_large,
+            id: c.id,
+            name: c.name,
+            number: c.collector_number ?? '',
+            set_id: c.set_id,
+            set_name: c.set_name,
+            image_url: c.image_url ?? '',
+            image_url_large: c.image_url_large ?? c.image_url ?? '',
+            tcgplayer_normal_market: c.tcgplayer_normal_market,
+            tcgplayer_foil_market: c.tcgplayer_foil_market,
           })));
           setLoading(false);
-        })
-        .catch(() => { Alert.alert('Error', 'No se pudo cargar las cartas'); setLoading(false); });
+        });
     } else {
       supabase
         .from('pokemon_cards')
@@ -578,7 +605,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
       pokemon_card_id: game === 'pokemon' ? card.id : null,
       folder_id: folderId,
     }));
-    const { error } = await supabase.from('cards_collection').insert(rows);
+    const { error } = await upsertCollectionCards(rows);
     setSaving(false);
     if (error) Alert.alert('Error', error.message);
     else onSave();
@@ -610,7 +637,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
               onPress={() => tapCard(item)}
               activeOpacity={0.7}
             >
-              <Image source={{ uri: item.image_url }} style={styles.thumbImg} resizeMode="contain" />
+              <Image source={{ uri: item.image_url }} style={styles.thumbImg} contentFit="contain" />
               <View style={styles.thumbFooter}>
                 <Text style={styles.thumbNum}>#{item.number}</Text>
                 <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
@@ -665,10 +692,21 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
 
 // ─── Step: Search by name ─────────────────────────────────────────────────────
 
-function SearchNameStep({ onSelect }: { onSelect: (c: PkmCard) => void }) {
+function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
+  game: TCGGame;
+  userId: string;
+  onSave: () => void;
+  onCtxChange: (ctx: SaveCtx | null) => void;
+  pickFolder: () => Promise<string | null>;
+}) {
   const [query, setQuery] = useState('');
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Map<string, Selection>>(new Map());
+  const [condition, setCondition] = useState<CardCondition>('mint');
+  const [language, setLanguage] = useState<CardLanguage>('en');
+  const [saving, setSaving] = useState(false);
+  const saveRef = useRef<() => void>(() => {});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -678,7 +716,7 @@ function SearchNameStep({ onSelect }: { onSelect: (c: PkmCard) => void }) {
       setLoading(true);
       const { data, error } = await supabase
         .from('pokemon_cards')
-        .select('id, name, number, set_id, set_name, image_url, image_url_large, supertype')
+        .select('id, name, number, set_id, set_name, image_url, image_url_large, supertype, tcgplayer_normal_market, tcgplayer_foil_market')
         .ilike('name', `%${query.trim()}%`)
         .order('name')
         .limit(60);
@@ -688,6 +726,60 @@ function SearchNameStep({ onSelect }: { onSelect: (c: PkmCard) => void }) {
     }, 400);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [query]);
+
+  function tapCard(card: PkmCard) {
+    setSelected(prev => {
+      const next = new Map(prev);
+      const existing = next.get(card.id);
+      next.set(card.id, { card, qty: (existing?.qty ?? 0) + 1 });
+      return next;
+    });
+  }
+
+  function removeCard(cardId: string) {
+    setSelected(prev => {
+      const next = new Map(prev);
+      next.delete(cardId);
+      return next;
+    });
+  }
+
+  const totalCards = Array.from(selected.values()).reduce((sum, s) => sum + s.qty, 0);
+
+  saveRef.current = async () => {
+    if (selected.size === 0) return;
+    const folderId = await pickFolder();
+    setSaving(true);
+    const rows = Array.from(selected.values()).map(({ card, qty }) => ({
+      user_id: userId,
+      card_name: card.name,
+      game,
+      set_name: card.set_name,
+      card_number: card.number,
+      quantity: qty,
+      condition,
+      language,
+      is_foil: false,
+      is_for_trade: false,
+      is_for_sale: false,
+      price_reference: null,
+      image_url: card.image_url_large ?? card.image_url ?? null,
+      pokemon_card_id: game === 'pokemon' ? card.id : null,
+      folder_id: folderId,
+    }));
+    const { error } = await supabase.from('cards_collection').insert(rows);
+    setSaving(false);
+    if (error) Alert.alert('Error', error.message);
+    else onSave();
+  };
+
+  useEffect(() => {
+    onCtxChange({ total: totalCards, saving, save: () => saveRef.current() });
+  }, [totalCards, saving]);
+
+  useEffect(() => {
+    return () => onCtxChange(null);
+  }, []);
 
   return (
     <View style={{ flex: 1 }}>
@@ -705,13 +797,34 @@ function SearchNameStep({ onSelect }: { onSelect: (c: PkmCard) => void }) {
           data={cards}
           keyExtractor={c => c.id}
           numColumns={3}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.thumb} onPress={() => onSelect(item)}>
-              <Image source={{ uri: item.image_url }} style={styles.thumbImg} resizeMode="contain" />
-              <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.thumbNum} numberOfLines={1}>{item.set_name}</Text>
-            </TouchableOpacity>
-          )}
+          columnWrapperStyle={{ justifyContent: 'flex-start' }}
+          renderItem={({ item }) => {
+            const sel = selected.get(item.id);
+            const qty = sel?.qty ?? 0;
+            return (
+              <TouchableOpacity
+                style={[styles.thumb, qty > 0 && styles.thumbSelected]}
+                onPress={() => tapCard(item)}
+                activeOpacity={0.7}
+              >
+                <Image source={{ uri: item.image_url }} style={styles.thumbImg} contentFit="contain" />
+                <View style={styles.thumbFooter}>
+                  <Text style={styles.thumbNum}>#{item.number}</Text>
+                  <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Text style={[styles.thumbNum, { flex: 1 }]} numberOfLines={1}>{item.set_name}</Text>
+                  {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>${p % 1 === 0 ? p : p.toFixed(2)}</Text> : null; })()}
+                </View>
+                {qty > 0 && (
+                  <TouchableOpacity style={styles.qtyBadge} onPress={() => removeCard(item.id)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                    <Text style={styles.qtyText}>{qty}</Text>
+                    <Ionicons name="close-circle" size={11} color="rgba(255,255,255,0.8)" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={
             query.trim() ? (
               <View style={styles.emptySearch}>
@@ -724,96 +837,41 @@ function SearchNameStep({ onSelect }: { onSelect: (c: PkmCard) => void }) {
               </View>
             )
           }
-          contentContainerStyle={{ padding: 8, paddingBottom: 20 }}
+          contentContainerStyle={{ padding: 8, paddingBottom: 8 }}
         />
       )}
+
+      <View style={styles.setBottomPanel}>
+        <View style={styles.setBottomRow}>
+          <Text style={styles.setBottomLabel}>Condición</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {CONDITIONS.map(c => (
+              <TouchableOpacity
+                key={c.value}
+                style={[styles.miniChip, condition === c.value && styles.miniChipActive]}
+                onPress={() => setCondition(c.value)}
+              >
+                <Text style={[styles.miniChipText, condition === c.value && styles.miniChipTextActive]}>{c.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        <View style={styles.setBottomRow}>
+          <Text style={styles.setBottomLabel}>Idioma</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {LANGUAGES.map(l => (
+              <TouchableOpacity
+                key={l.value}
+                style={[styles.miniChip, language === l.value && styles.miniChipActive]}
+                onPress={() => setLanguage(l.value)}
+              >
+                <Text style={[styles.miniChipText, language === l.value && styles.miniChipTextActive]}>{l.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
     </View>
-  );
-}
-
-// ─── Step: Manual entry ───────────────────────────────────────────────────────
-
-function ManualStep({ game, userId, onSave, pickFolder }: { game: TCGGame; userId: string; onSave: () => void; pickFolder: () => Promise<string | null> }) {
-  const [cardName, setCardName] = useState('');
-  const [setName, setSetName] = useState('');
-  const [cardNumber, setCardNumber] = useState('');
-  const [condition, setCondition] = useState<CardCondition>('near_mint');
-  const [quantity, setQuantity] = useState('1');
-  const [price, setPrice] = useState('');
-  const [isFoil, setIsFoil] = useState(false);
-  const [isForTrade, setIsForTrade] = useState(false);
-  const [isForSale, setIsForSale] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (!cardName.trim()) { Alert.alert('Error', 'El nombre de la carta es requerido'); return; }
-    const folderId = await pickFolder();
-    setSaving(true);
-    const { error } = await supabase.from('cards_collection').insert({
-      user_id: userId,
-      card_name: cardName.trim(),
-      game,
-      set_name: setName.trim() || null,
-      card_number: cardNumber.trim() || null,
-      quantity: parseInt(quantity) || 1,
-      condition,
-      is_foil: isFoil,
-      is_for_trade: isForTrade,
-      is_for_sale: isForSale,
-      price_reference: price ? parseFloat(price) : null,
-      folder_id: folderId,
-    });
-    setSaving(false);
-    if (error) Alert.alert('Error', error.message);
-    else onSave();
-  }
-
-  return (
-    <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
-      <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Nombre de la carta *</Text>
-        <TextInput style={styles.input} value={cardName} onChangeText={setCardName} placeholder="Ej: Charizard ex" placeholderTextColor="#475569" />
-      </View>
-      <View style={styles.rowInputs}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Set / Edición</Text>
-          <TextInput style={styles.input} value={setName} onChangeText={setSetName} placeholder="Stellar Crown" placeholderTextColor="#475569" />
-        </View>
-        <View style={{ width: 100 }}>
-          <Text style={styles.fieldLabel}>Número</Text>
-          <TextInput style={styles.input} value={cardNumber} onChangeText={setCardNumber} placeholder="006/142" placeholderTextColor="#475569" />
-        </View>
-      </View>
-      <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Condición</Text>
-        <View style={styles.chips}>
-          {CONDITIONS.map((c) => (
-            <TouchableOpacity key={c.value} style={[styles.chip, condition === c.value && styles.chipActive]} onPress={() => setCondition(c.value)}>
-              <Text style={[styles.chipText, condition === c.value && styles.chipTextActive]}>{c.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-      <View style={styles.rowInputs}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Cantidad</Text>
-          <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} keyboardType="number-pad" placeholder="1" placeholderTextColor="#475569" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Precio ref. (USD)</Text>
-          <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#475569" />
-        </View>
-      </View>
-      <View style={styles.switches}>
-        <SwitchRow icon="star-outline" label="Foil / Holo" value={isFoil} onChange={setIsFoil} />
-        <SwitchRow icon="swap-horizontal-outline" label="Disponible para trade" value={isForTrade} onChange={setIsForTrade} />
-        <SwitchRow icon="pricetag-outline" label="En venta" value={isForSale} onChange={setIsForSale} last />
-      </View>
-      <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={handleSave} disabled={saving}>
-        {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveBtnText}>Guardar en colección</Text>}
-      </TouchableOpacity>
-      <View style={{ height: 40 }} />
-    </ScrollView>
   );
 }
 
@@ -822,18 +880,17 @@ function ManualStep({ game, userId, onSave, pickFolder }: { game: TCGGame; userI
 function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
   game: TCGGame; card: PkmCard; userId: string; onSave: () => void; pickFolder: () => Promise<string | null>;
 }) {
-  const [condition, setCondition] = useState<CardCondition>('near_mint');
+  const [condition, setCondition] = useState<CardCondition>('mint');
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
   const [isFoil, setIsFoil] = useState(false);
-  const [isForTrade, setIsForTrade] = useState(false);
-  const [isForSale, setIsForSale] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     const folderId = await pickFolder();
     setSaving(true);
-    const { error } = await supabase.from('cards_collection').insert({
+    const { error } = await upsertCollectionCards([{
       user_id: userId,
       card_name: card.name,
       game,
@@ -842,13 +899,13 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
       quantity: parseInt(quantity) || 1,
       condition,
       is_foil: isFoil,
-      is_for_trade: isForTrade,
-      is_for_sale: isForSale,
+      is_for_trade: isAvailable,
+      is_for_sale: false,
       price_reference: price ? parseFloat(price) : null,
       image_url: card.image_url_large ?? card.image_url ?? null,
       pokemon_card_id: card.id,
       folder_id: folderId,
-    });
+    }]);
     setSaving(false);
     if (error) Alert.alert('Error', error.message);
     else onSave();
@@ -857,7 +914,7 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
   return (
     <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
       <View style={styles.cardPreview}>
-        <Image source={{ uri: card.image_url_large ?? card.image_url }} style={styles.cardPreviewImg} resizeMode="contain" />
+        <Image source={{ uri: card.image_url_large ?? card.image_url }} style={styles.cardPreviewImg} contentFit="contain" />
         <Text style={styles.previewName}>{card.name}</Text>
         <Text style={styles.previewMeta}>{card.set_name} · #{card.number}</Text>
       </View>
@@ -886,8 +943,7 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
 
       <View style={styles.switches}>
         <SwitchRow icon="star-outline" label="Foil / Holo" value={isFoil} onChange={setIsFoil} />
-        <SwitchRow icon="swap-horizontal-outline" label="Disponible para trade" value={isForTrade} onChange={setIsForTrade} />
-        <SwitchRow icon="pricetag-outline" label="En venta" value={isForSale} onChange={setIsForSale} last />
+        <SwitchRow icon="compass-outline" label="Disponible para ofrecer" value={isAvailable} onChange={setIsAvailable} last />
       </View>
 
       <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={handleSave} disabled={saving}>

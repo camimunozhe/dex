@@ -19,7 +19,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Para escanear cartas TCG",
         "NSPhotoLibraryUsageDescription": "Para subir fotos de cartas",
-        "NSLocationWhenInUseUsageDescription": "Para sugerir zonas seguras cercanas"
+        "NSLocationWhenInUseUsageDescription": "Para sugerir zonas seguras cercanas",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -32,7 +33,19 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -48,6 +61,18 @@
           "locationAlwaysAndWhenInUsePermission": "Para sugerir zonas seguras cercanas"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a7337c32-3d4f-4a05-a4fc-de0c3889c484"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a7337c32-3d4f-4a05-a4fc-de0c3889c484"
+    }
   }
 }
