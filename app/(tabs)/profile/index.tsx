@@ -4,10 +4,19 @@ import {
   Switch, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
 type Reputation = { positive_count: number; negative_count: number; total_ratings: number } | null;
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const VERIFICATION_BADGE: Record<string, { icon: IoniconName; color: string; label: string }> = {
+  none: { icon: 'ellipse-outline', color: '#94A3B8', label: 'Sin verificar' },
+  basic: { icon: 'checkmark-circle', color: '#3B82F6', label: 'Básico' },
+  intermediate: { icon: 'shield-checkmark', color: '#22C55E', label: 'Intermedio' },
+  advanced: { icon: 'star', color: '#A855F7', label: 'Avanzado' },
+};
 
 export default function ProfileScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
@@ -49,12 +58,7 @@ export default function ProfileScreen() {
   }
 
   const verLevel = profile?.verification_level ?? 'none';
-  const verLabel: Record<string, string> = {
-    none: '⚪ Sin verificar',
-    basic: '🔵 Básico',
-    intermediate: '🟢 Intermedio',
-    advanced: '🟣 Avanzado',
-  };
+  const verBadge = VERIFICATION_BADGE[verLevel] ?? VERIFICATION_BADGE.none;
   const positiveRate = reputation && reputation.total_ratings > 0
     ? Math.round((reputation.positive_count / reputation.total_ratings) * 100)
     : null;
@@ -78,8 +82,11 @@ export default function ProfileScreen() {
             style={styles.verifyBtn}
             onPress={() => router.push('/(tabs)/profile/verify')}
           >
-            <Text style={styles.verifyBtnText}>{verLabel[verLevel]}</Text>
-            {verLevel !== 'advanced' && <Text style={styles.verifyArrow}> →</Text>}
+            <Ionicons name={verBadge.icon} size={14} color={verBadge.color} style={styles.verifyBtnIcon} />
+            <Text style={styles.verifyBtnText}>{verBadge.label}</Text>
+            {verLevel !== 'advanced' && (
+              <Ionicons name="chevron-forward" size={14} color="#6366F1" style={styles.verifyArrow} />
+            )}
           </TouchableOpacity>
         </View>
 
@@ -103,8 +110,14 @@ export default function ProfileScreen() {
               <View style={[styles.repNegative, { flex: reputation.negative_count || 0.01 }]} />
             </View>
             <View style={styles.repLabels}>
-              <Text style={styles.repPositiveText}>👍 {reputation.positive_count} positivos</Text>
-              <Text style={styles.repNegativeText}>👎 {reputation.negative_count} negativos</Text>
+              <View style={styles.repLabelItem}>
+                <Ionicons name="thumbs-up" size={14} color="#4ADE80" />
+                <Text style={styles.repPositiveText}>{reputation.positive_count} positivos</Text>
+              </View>
+              <View style={styles.repLabelItem}>
+                <Ionicons name="thumbs-down" size={14} color="#EF4444" />
+                <Text style={styles.repNegativeText}>{reputation.negative_count} negativos</Text>
+              </View>
             </View>
           </View>
         )}
@@ -135,8 +148,11 @@ export default function ProfileScreen() {
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/profile/verify')}
           >
-            <Text style={styles.menuItemText}>🛡️ Verificación de identidad</Text>
-            <Text style={styles.menuItemArrow}>→</Text>
+            <View style={styles.menuItemContent}>
+              <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+              <Text style={styles.menuItemText}>Verificación de identidad</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" />
           </TouchableOpacity>
         </View>
 
@@ -145,7 +161,10 @@ export default function ProfileScreen() {
           <Text style={styles.sectionTitle}>Cuenta</Text>
           <View style={styles.settingsList}>
             <View style={styles.menuItem}>
-              <Text style={styles.menuItemText}>📧 {user?.email}</Text>
+              <View style={styles.menuItemContent}>
+                <Ionicons name="mail-outline" size={18} color="#94A3B8" />
+                <Text style={styles.menuItemText}>{user?.email}</Text>
+              </View>
             </View>
             <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={handleSignOut}>
               <Text style={styles.menuItemDangerText}>Cerrar sesión</Text>
@@ -185,8 +204,9 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7,
     borderWidth: 1, borderColor: '#334155',
   },
+  verifyBtnIcon: { marginRight: 6 },
   verifyBtnText: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
-  verifyArrow: { color: '#6366F1', fontSize: 14, fontWeight: '700' },
+  verifyArrow: { marginLeft: 4 },
   stats: {
     flexDirection: 'row',
     marginHorizontal: 16, marginBottom: 8,
@@ -214,8 +234,8 @@ const styles = StyleSheet.create({
     padding: 14, borderBottomWidth: 1, borderBottomColor: '#334155',
     backgroundColor: '#1E293B', borderRadius: 0,
   },
+  menuItemContent: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   menuItemText: { color: '#F1F5F9', fontSize: 14 },
-  menuItemArrow: { color: '#64748B', fontSize: 16 },
   menuItemDanger: { borderBottomWidth: 0 },
   menuItemDangerText: { color: '#EF4444', fontSize: 14, fontWeight: '600' },
   repBar: {
@@ -225,6 +245,7 @@ const styles = StyleSheet.create({
   repPositive: { backgroundColor: '#4ADE80' },
   repNegative: { backgroundColor: '#EF4444' },
   repLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  repLabelItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   repPositiveText: { color: '#4ADE80', fontSize: 12 },
   repNegativeText: { color: '#EF4444', fontSize: 12 },
 });
