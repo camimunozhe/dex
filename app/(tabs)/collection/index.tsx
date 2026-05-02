@@ -100,11 +100,22 @@ export default function CollectionScreen() {
   const visibleUserCards = useMemo(() => allUserCards.filter(c => enabledGamesSet.has(c.game)), [allUserCards, enabledGamesSet]);
   const allCards = useMemo(() => visibleUserCards.filter(c => c.folder_id === null), [visibleUserCards]);
   const folderedRows = useMemo(() => visibleUserCards.filter(c => c.folder_id !== null), [visibleUserCards]);
-  const visibleFolderIds = useMemo(() => new Set(folderedRows.map(c => c.folder_id!)), [folderedRows]);
+  // Derive each folder's effective game from any card it has (custom folders) using the unfiltered set,
+  // so a folder full of cards from a disabled game is still detected as belonging to that game.
+  const folderGameMap = useMemo(() => {
+    const map: Record<string, TCGGame | null> = {};
+    for (const f of folders) map[f.id] = null;
+    for (const c of allUserCards) {
+      if (c.folder_id && map[c.folder_id] == null) map[c.folder_id] = c.game;
+    }
+    return map;
+  }, [folders, allUserCards]);
   const visibleFolders = useMemo(() => folders.filter(f => {
     if (f.is_default && f.game) return enabledGamesSet.has(f.game);
-    return visibleFolderIds.has(f.id);
-  }), [folders, enabledGamesSet, visibleFolderIds]);
+    const g = folderGameMap[f.id];
+    if (g == null) return true; // empty custom folder: always show
+    return enabledGamesSet.has(g);
+  }), [folders, folderGameMap, enabledGamesSet]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
