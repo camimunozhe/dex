@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
-import { formatPrice, formatCurrencyValue } from '@/lib/currency';
+import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -294,7 +294,7 @@ export default function CollectionScreen() {
           {!selectionMode && (
             <Text style={styles.subtitle}>
               {totalCards} cartas{totalValue > 0 ? (
-                <>{'  ·  '}<Text style={{ color: '#4ADE80' }}>{formatCurrencyValue(totalValue, currency)}</Text></>
+                <>{'  ·  '}<Text style={{ color: '#4ADE80' }}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
               ) : ''}
             </Text>
           )}
