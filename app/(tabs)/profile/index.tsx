@@ -187,10 +187,6 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configuración</Text>
           <View style={styles.settingsList}>
-        {/* Configuración */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Configuración</Text>
-          <View style={styles.settingsList}>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => router.push('/(tabs)/profile/games')}

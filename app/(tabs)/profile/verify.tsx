@@ -14,7 +14,7 @@ const LEVELS = [
     label: 'Básico',
     badge: '🔵',
     description: 'Email + teléfono confirmado',
-    features: ['Perfil visible', 'Colección pública', 'Ver encuentros de otros'],
+    features: ['Perfil visible', 'Ver encuentros de otros'],
     requirement: 'Confirma tu número de teléfono',
   },
   {
