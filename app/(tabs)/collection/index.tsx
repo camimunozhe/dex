@@ -188,6 +188,10 @@ export default function CollectionScreen() {
 
   async function deleteFolderConfirmed(folder: CollectionFolder) {
     setFolderActionFolder(null);
+    if (folder.is_default) {
+      Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
+      return;
+    }
     Alert.alert('Eliminar carpeta', `¿Eliminar "${folder.name}"? Las cartas quedarán sin carpeta.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -637,12 +641,15 @@ function FolderActionModal({
             <Text style={styles.actionRowText}>Renombrar</Text>
           </TouchableOpacity>
 
-          <View style={styles.actionSeparator} />
-
-          <TouchableOpacity style={styles.actionRow} onPress={onDelete}>
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
-            <Text style={[styles.actionRowText, { color: '#EF4444' }]}>Eliminar carpeta</Text>
-          </TouchableOpacity>
+          {!folder.is_default && (
+            <>
+              <View style={styles.actionSeparator} />
+              <TouchableOpacity style={styles.actionRow} onPress={onDelete}>
+                <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                <Text style={[styles.actionRowText, { color: '#EF4444' }]}>Eliminar carpeta</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </TouchableOpacity>
     </Modal>

@@ -135,6 +135,8 @@ export interface CollectionFolder {
   user_id: string;
   name: string;
   color: string;
+  is_default: boolean;
+  game: TCGGame | null;
   created_at: string;
 }
 

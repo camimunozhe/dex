@@ -3,7 +3,7 @@ import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, ScrollView, SafeAreaView, FlatList,
-  ActivityIndicator, Switch, Dimensions, Modal,
+  ActivityIndicator, Switch, Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
@@ -11,8 +11,8 @@ import { usePreventRemove } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import type { TCGGame, CardCondition, CardLanguage, CollectionFolder } from '@/types/database';
-import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
+import type { TCGGame, CardCondition, CardLanguage } from '@/types/database';
+import { getOrCreateDefaultFolder } from '@/lib/defaultFolders';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -183,27 +183,11 @@ export default function AddCardScreen() {
   );
   const [saved, setSaved] = useState(false);
   const [saveCtx, setSaveCtx] = useState<SaveCtx | null>(null);
-  const [folders, setFolders] = useState<CollectionFolder[]>([]);
-  const [folderPickerVisible, setFolderPickerVisible] = useState(false);
-  const folderResolveRef = useRef<((id: string | null) => void) | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from('collection_folders')
-      .select('id, name, color')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => setFolders(data ?? []));
-  }, [user]);
-
-  function pickFolder(): Promise<string | null> {
-    if (lockedFolderId) return Promise.resolve(lockedFolderId);
-    if (folders.length === 0) return Promise.resolve(null);
-    return new Promise(resolve => {
-      folderResolveRef.current = resolve;
-      setFolderPickerVisible(true);
-    });
+  async function resolveFolderId(game: TCGGame): Promise<string | null> {
+    if (lockedFolderId) return lockedFolderId;
+    if (!user) return null;
+    return getOrCreateDefaultFolder(user.id, game);
   }
 
   const current = stack[stack.length - 1];
@@ -241,15 +225,6 @@ export default function AddCardScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <FolderPickerModal
-        visible={folderPickerVisible}
-        folders={folders}
-        onPick={(id) => {
-          setFolderPickerVisible(false);
-          folderResolveRef.current?.(id);
-          folderResolveRef.current = null;
-        }}
-      />
       <View style={styles.header}>
         <TouchableOpacity onPress={pop} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={20} color="#6366F1" />
@@ -299,7 +274,7 @@ export default function AddCardScreen() {
           userId={user!.id}
           onSave={onSave}
           onCtxChange={setSaveCtx}
-          pickFolder={pickFolder}
+          resolveFolderId={resolveFolderId}
         />
       )}
       {current.page === 'search-name' && (
@@ -308,11 +283,11 @@ export default function AddCardScreen() {
           userId={user!.id}
           onSave={onSave}
           onCtxChange={setSaveCtx}
-          pickFolder={pickFolder}
+          resolveFolderId={resolveFolderId}
         />
       )}
 {current.page === 'confirm' && (
-        <ConfirmStep game={current.game} card={current.card} userId={user!.id} onSave={onSave} pickFolder={pickFolder} />
+        <ConfirmStep game={current.game} card={current.card} userId={user!.id} onSave={onSave} resolveFolderId={resolveFolderId} />
       )}
     </SafeAreaView>
   );
@@ -510,13 +485,13 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
 
 type Selection = { card: PkmCard; qty: number };
 
-function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }: {
+function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolderId }: {
   setId: string;
   game: TCGGame;
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
-  pickFolder: () => Promise<string | null>;
+  resolveFolderId: (game: TCGGame) => Promise<string | null>;
 }) {
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -593,14 +568,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
 
   saveRef.current = async () => {
     if (selected.size === 0) return;
-    const folderId = await pickFolder();
-    if (folderId) {
-      const check = await validateFolderGame(folderId, [game]);
-      if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
-        return;
-      }
-    }
+    const folderId = await resolveFolderId(game);
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -706,12 +674,12 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
 
 // ─── Step: Search by name ─────────────────────────────────────────────────────
 
-function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
+function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId }: {
   game: TCGGame;
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
-  pickFolder: () => Promise<string | null>;
+  resolveFolderId: (game: TCGGame) => Promise<string | null>;
 }) {
   const [query, setQuery] = useState('');
   const [cards, setCards] = useState<PkmCard[]>([]);
@@ -762,14 +730,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
 
   saveRef.current = async () => {
     if (selected.size === 0) return;
-    const folderId = await pickFolder();
-    if (folderId) {
-      const check = await validateFolderGame(folderId, [game]);
-      if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
-        return;
-      }
-    }
+    const folderId = await resolveFolderId(game);
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -898,8 +859,8 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
 
 // ─── Step: Confirm (after API card selection) ─────────────────────────────────
 
-function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
-  game: TCGGame; card: PkmCard; userId: string; onSave: () => void; pickFolder: () => Promise<string | null>;
+function ConfirmStep({ game, card, userId, onSave, resolveFolderId }: {
+  game: TCGGame; card: PkmCard; userId: string; onSave: () => void; resolveFolderId: (game: TCGGame) => Promise<string | null>;
 }) {
   const [condition, setCondition] = useState<CardCondition>('mint');
   const [quantity, setQuantity] = useState('1');
@@ -909,14 +870,7 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    const folderId = await pickFolder();
-    if (folderId) {
-      const check = await validateFolderGame(folderId, [game]);
-      if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
-        return;
-      }
-    }
+    const folderId = await resolveFolderId(game);
     setSaving(true);
     const { error } = await upsertCollectionCards([{
       user_id: userId,
@@ -979,35 +933,6 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
       </TouchableOpacity>
       <View style={{ height: 40 }} />
     </ScrollView>
-  );
-}
-
-// ─── FolderPickerModal ────────────────────────────────────────────────────────
-
-function FolderPickerModal({ visible, folders, onPick }: {
-  visible: boolean;
-  folders: CollectionFolder[];
-  onPick: (id: string | null) => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent>
-      <TouchableOpacity style={styles.fpOverlay} activeOpacity={1} onPress={() => onPick(null)}>
-        <View style={styles.fpSheet}>
-          <View style={styles.fpHandle} />
-          <Text style={styles.fpTitle}>¿En qué carpeta?</Text>
-          <TouchableOpacity style={styles.fpRow} onPress={() => onPick(null)}>
-            <View style={[styles.fpDot, { backgroundColor: '#334155' }]} />
-            <Text style={styles.fpName}>Sin carpeta</Text>
-          </TouchableOpacity>
-          {folders.map(f => (
-            <TouchableOpacity key={f.id} style={styles.fpRow} onPress={() => onPick(f.id)}>
-              <View style={[styles.fpDot, { backgroundColor: f.color }]} />
-              <Text style={styles.fpName}>{f.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </TouchableOpacity>
-    </Modal>
   );
 }
 
@@ -1175,11 +1100,4 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Folder picker modal
-  fpOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  fpSheet: { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 36, paddingHorizontal: 20, paddingTop: 12 },
-  fpHandle: { width: 36, height: 4, backgroundColor: '#334155', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  fpTitle: { color: '#94A3B8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
-  fpRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#0F172A' },
-  fpDot: { width: 12, height: 12, borderRadius: 6 },
-  fpName: { color: '#F1F5F9', fontSize: 15, fontWeight: '500' },
 });

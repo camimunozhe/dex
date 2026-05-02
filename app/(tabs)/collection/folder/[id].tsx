@@ -251,6 +251,10 @@ export default function FolderDetailScreen() {
   }
 
   async function deleteFolder() {
+    if (folder?.is_default) {
+      Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
+      return;
+    }
     Alert.alert('Eliminar carpeta', `¿Eliminar "${folder?.name}"? Las cartas quedarán sin carpeta.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -304,9 +308,11 @@ export default function FolderDetailScreen() {
               <TouchableOpacity onPress={() => setShowAddSheet(true)} style={styles.headerIconBtn} hitSlop={8}>
                 <Ionicons name="add" size={24} color="#6366F1" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
-                <Ionicons name="trash-outline" size={20} color="#EF4444" />
-              </TouchableOpacity>
+              {!folder.is_default && (
+                <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
