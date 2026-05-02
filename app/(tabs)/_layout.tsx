@@ -43,7 +43,7 @@ export default function TabsLayout() {
         name="encuentros"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} label="Encuentros" icon={focused ? 'calendar' : 'calendar-outline'} />
+            <TabIcon focused={focused} label="Encuentros" icon={focused ? 'people' : 'people-outline'} />
           ),
         }}
       />
