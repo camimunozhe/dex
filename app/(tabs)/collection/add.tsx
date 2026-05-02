@@ -207,7 +207,7 @@ export default function AddCardScreen() {
   }
 
   const current = stack[stack.length - 1];
-  const inWizard = stack.length > 1 || initialGame !== null;
+  const inWizard = stack.length > 1;
 
   // Deshabilita el gesto nativo cuando estamos dentro del wizard.
   // usePreventRemove no es suficiente en native-stack porque el gesto
