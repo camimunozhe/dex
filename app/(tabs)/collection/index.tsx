@@ -15,6 +15,7 @@ import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database
 import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 import { getUsdToClp } from '@/lib/exchangeRate';
+import { availabilityBorder } from '@/lib/cardStyle';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -851,7 +852,7 @@ function CardItem({ card, onPress, onLongPress, selected, selectionMode, currenc
   const price = effectivePrice(card, currency ?? 'usd', usdToClp ?? 950);
   return (
     <TouchableOpacity
-      style={[styles.thumb, selected && styles.thumbSelected]}
+      style={[styles.thumb, availabilityBorder(card), selected && styles.thumbSelected]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.7}
@@ -873,16 +874,11 @@ function CardItem({ card, onPress, onLongPress, selected, selectionMode, currenc
           <Text style={styles.qtyText}>×{card.quantity}</Text>
         </View>
       )}
-      {selectionMode ? (
+      {selectionMode && (
         <View style={[styles.selCheckBadge, selected && styles.selCheckBadgeActive]}>
           {selected && <Ionicons name="checkmark" size={11} color="#fff" />}
         </View>
-      ) : (card.is_for_trade || card.is_for_sale) ? (
-        <View style={styles.tagBadge}>
-          {card.is_for_trade && <View style={styles.tagDotTrade} />}
-          {card.is_for_sale && <View style={styles.tagDotSale} />}
-        </View>
-      ) : null}
+      )}
       {!selectionMode && card.folder_id && (
         <View style={styles.folderBadge}>
           <Ionicons name="folder" size={10} color="#94A3B8" />
@@ -1006,9 +1002,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5, paddingVertical: 1,
   },
   qtyText: { color: '#94A3B8', fontSize: 9, fontWeight: '700' },
-  tagBadge: { position: 'absolute', top: 4, left: 4, flexDirection: 'row', gap: 3 },
-  tagDotTrade: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#22D3EE' },
-  tagDotSale: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4ADE80' },
   folderBadge: {
     position: 'absolute', top: 4, right: 4,
     backgroundColor: '#1E293B', borderRadius: 6, borderWidth: 1, borderColor: '#334155',

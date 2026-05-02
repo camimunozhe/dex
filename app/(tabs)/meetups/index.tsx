@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, TCGGame } from '@/types/database';
+import { availabilityBorder } from '@/lib/cardStyle';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -232,7 +233,7 @@ function ExploreHeader({
 function CardItem({ card, onPress }: { card: ExploreCard; onPress: () => void }) {
   const gameIcon = GAME_ICON[card.game];
   return (
-    <TouchableOpacity style={styles.thumb} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.thumb, availabilityBorder(card)]} onPress={onPress} activeOpacity={0.7}>
       {card.image_url ? (
         <Image source={{ uri: card.image_url }} style={styles.thumbImg} contentFit="contain" />
       ) : (
@@ -243,10 +244,6 @@ function CardItem({ card, onPress }: { card: ExploreCard; onPress: () => void })
       <View style={styles.thumbFooter}>
         {card.card_number && <Text style={styles.thumbNum}>#{card.card_number}</Text>}
         <Text style={styles.thumbName} numberOfLines={1}>{card.card_name}</Text>
-      </View>
-      <View style={styles.tagBadge}>
-        {card.is_for_trade && <View style={styles.tagDotTrade} />}
-        {card.is_for_sale && <View style={styles.tagDotSale} />}
       </View>
       {card.profiles?.username && (
         <View style={styles.ownerBadge}>
@@ -409,9 +406,6 @@ const styles = StyleSheet.create({
   thumbFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 3, width: '100%' },
   thumbNum: { color: '#64748B', fontSize: 9, fontWeight: '600', flexShrink: 0 },
   thumbName: { color: '#F1F5F9', fontSize: 9, fontWeight: '600', flexShrink: 1 },
-  tagBadge: { position: 'absolute', top: 4, left: 4, flexDirection: 'row', gap: 3 },
-  tagDotTrade: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#22D3EE' },
-  tagDotSale: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4ADE80' },
   ownerBadge: {
     position: 'absolute', bottom: 24, right: 0, left: 0,
     backgroundColor: '#00000066', paddingHorizontal: 4, paddingVertical: 2,

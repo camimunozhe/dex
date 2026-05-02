@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
+import { availabilityBorder } from '@/lib/cardStyle';
 import { patchCollectionCard, removeCollectionCard, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
@@ -622,7 +623,7 @@ function CardItem({ card, onPress, onLongPress, selected, selectionMode, currenc
   const gameIcon = GAME_ICON[card.game];
   const price = effectivePrice(card, currency, usdToClp);
   return (
-    <TouchableOpacity style={[styles.thumb, selected && styles.thumbSelected]} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.thumb, availabilityBorder(card), selected && styles.thumbSelected]} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
       {card.image_url ? (
         <Image source={{ uri: card.image_url }} style={styles.thumbImg} contentFit="contain" />
       ) : (
