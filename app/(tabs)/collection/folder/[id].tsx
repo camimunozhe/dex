@@ -188,6 +188,7 @@ export default function FolderDetailScreen() {
         visible={showPicker}
         folderId={id}
         folderColor={folder.color}
+        folderGame={cards[0]?.game ?? null}
         userId={user!.id}
         onClose={() => setShowPicker(false)}
         onAdded={() => { setShowPicker(false); fetchCards(); }}
@@ -199,11 +200,12 @@ export default function FolderDetailScreen() {
 // ─── Card picker modal ────────────────────────────────────────────────────────
 
 function CardPickerModal({
-  visible, folderId, folderColor, userId, onClose, onAdded,
+  visible, folderId, folderColor, folderGame, userId, onClose, onAdded,
 }: {
   visible: boolean;
   folderId: string;
   folderColor: string;
+  folderGame: TCGGame | null;
   userId: string;
   onClose: () => void;
   onAdded: () => void;
@@ -219,14 +221,16 @@ function CardPickerModal({
     setLoading(true);
     setSelected(new Set());
     setSearch('');
-    supabase
+    let query = supabase
       .from('cards_collection')
       .select('*')
       .eq('user_id', userId)
-      .or(`folder_id.is.null,folder_id.neq.${folderId}`)
+      .or(`folder_id.is.null,folder_id.neq.${folderId}`);
+    if (folderGame) query = query.eq('game', folderGame);
+    query
       .order('card_name', { ascending: true })
       .then(({ data }) => { setAllCards(data ?? []); setLoading(false); });
-  }, [visible, userId, folderId]);
+  }, [visible, userId, folderId, folderGame]);
 
   const filtered = search.trim()
     ? allCards.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()))
