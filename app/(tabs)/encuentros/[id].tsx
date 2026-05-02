@@ -82,8 +82,10 @@ export default function EncuentroDetailScreen() {
   const other = isProposer ? meetup.receiver : meetup.proposer;
   const myCards = cards.filter(c => c.side === (isProposer ? 'proposer' : 'receiver'));
   const theirCards = cards.filter(c => c.side === (isProposer ? 'receiver' : 'proposer'));
+  const proposerSideCards = cards.filter(c => c.side === 'proposer');
+  const needsReceiverPick = !isProposer && meetup.status === 'pending' && proposerSideCards.length === 0;
   const status = STATUS_LABEL[meetup.status] ?? { label: meetup.status, color: '#94A3B8' };
-  const canAct = !isProposer && (meetup.status === 'pending' || meetup.status === 'countered');
+  const canAct = !isProposer && (meetup.status === 'pending' || meetup.status === 'countered') && !needsReceiverPick;
   const canEdit = meetup.status === 'pending' || meetup.status === 'countered';
   const isConfirmed = meetup.status === 'confirmed';
   const myCheckedIn = isProposer ? meetup.proposer_checked_in : meetup.receiver_checked_in;
@@ -268,6 +270,29 @@ export default function EncuentroDetailScreen() {
 
         {/* Actions */}
         <View style={styles.actionsBlock}>
+          {needsReceiverPick && (
+            <>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.btnAccept]}
+                onPress={openEditModal}
+                disabled={saving}
+              >
+                <Ionicons name="albums-outline" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Elegí qué querés a cambio</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.btnReject]}
+                onPress={() => Alert.alert('Rechazar', '¿Rechazar esta propuesta?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Rechazar', style: 'destructive', onPress: () => updateStatus('cancelled') },
+                ])}
+                disabled={saving}
+              >
+                <Ionicons name="close-outline" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Rechazar</Text>
+              </TouchableOpacity>
+            </>
+          )}
           {canAct && (
             <>
               <TouchableOpacity

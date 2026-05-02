@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { resolveEnabledGames } from '@/lib/enabledGames';
 import type { CardCollection } from '@/types/database';
 
-type Step = 'cards' | 'my_cards' | 'details';
+type Step = 'cards' | 'details';
 
 const CARD_THUMB_WIDTH = (Dimensions.get('window').width - 32 - 16) / 3; // 16px lateral padding × 2, 8px gap × 2
 
@@ -25,10 +25,6 @@ export default function NuevaPropuestaScreen() {
   const [receiverProfile, setReceiverProfile] = useState<{ username: string; avatar_url: string | null } | null>(null);
   const [theirCards, setTheirCards] = useState<CardCollection[]>([]);   // all available from receiver
   const [selectedTheir, setSelectedTheir] = useState<Set<string>>(new Set(card_id ? [card_id] : []));
-
-  // My cards (for trade)
-  const [myCards, setMyCards] = useState<CardCollection[]>([]);
-  const [selectedMine, setSelectedMine] = useState<Set<string>>(new Set());
 
   const [type, setType] = useState<'trade' | 'purchase'>('trade');
   const [price, setPrice] = useState('');
@@ -43,7 +39,7 @@ export default function NuevaPropuestaScreen() {
 
   const loadData = useCallback(async () => {
     const enabled = resolveEnabledGames(profile?.enabled_games);
-    const [profileRes, theirRes, mineRes] = await Promise.all([
+    const [profileRes, theirRes] = await Promise.all([
       supabase.from('profiles').select('username, avatar_url').eq('id', receiver_id).single(),
       supabase.from('cards_collection')
         .select('*')
@@ -51,16 +47,10 @@ export default function NuevaPropuestaScreen() {
         .or('is_for_trade.eq.true,is_for_sale.eq.true')
         .in('game', enabled)
         .order('created_at', { ascending: false }),
-      supabase.from('cards_collection')
-        .select('*')
-        .eq('user_id', user!.id)
-        .in('game', enabled)
-        .order('created_at', { ascending: false }),
     ]);
     setReceiverProfile(profileRes.data as any);
     setTheirCards((theirRes.data ?? []) as CardCollection[]);
-    setMyCards((mineRes.data ?? []) as CardCollection[]);
-  }, [receiver_id, user, profile?.enabled_games]);
+  }, [receiver_id, profile?.enabled_games]);
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
@@ -89,10 +79,7 @@ export default function NuevaPropuestaScreen() {
     if (error || !meetupData) { Alert.alert('Error al crear la propuesta'); setSaving(false); return; }
 
     const meetupId = (meetupData as any).id;
-    const cardInserts = [
-      ...Array.from(selectedTheir).map(cid => ({ meetup_id: meetupId, card_id: cid, side: 'receiver' as const })),
-      ...Array.from(selectedMine).map(cid => ({ meetup_id: meetupId, card_id: cid, side: 'proposer' as const })),
-    ];
+    const cardInserts = Array.from(selectedTheir).map(cid => ({ meetup_id: meetupId, card_id: cid, side: 'receiver' as const }));
     if (cardInserts.length > 0) {
       await supabase.from('meetup_cards').insert(cardInserts);
     }
@@ -108,7 +95,7 @@ export default function NuevaPropuestaScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => (step === 'cards' ? router.back() : setStep(step === 'details' ? (type === 'trade' ? 'my_cards' : 'cards') : 'cards'))}>
+        <TouchableOpacity onPress={() => (step === 'cards' ? router.back() : setStep('cards'))}>
           <Text style={styles.back}>← Volver</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Nueva propuesta</Text>
@@ -116,7 +103,7 @@ export default function NuevaPropuestaScreen() {
       </View>
 
       {/* Step indicator */}
-      <StepBar step={step} type={type} />
+      <StepBar step={step} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
@@ -162,25 +149,8 @@ export default function NuevaPropuestaScreen() {
               <TouchableOpacity
                 style={[styles.nextBtn, selectedTheir.size === 0 && styles.nextBtnDisabled]}
                 disabled={selectedTheir.size === 0}
-                onPress={() => setStep(type === 'trade' ? 'my_cards' : 'details')}
+                onPress={() => setStep('details')}
               >
-                <Text style={styles.nextBtnText}>
-                  {type === 'trade' ? 'Siguiente: mis cartas →' : 'Siguiente: detalles →'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {step === 'my_cards' && (
-            <>
-              <Text style={styles.sectionTitle}>¿Qué ofreces a cambio?</Text>
-              <Text style={styles.sectionSub}>Selecciona tus cartas para el intercambio (opcional)</Text>
-              <CardGrid
-                cards={myCards}
-                selected={selectedMine}
-                onToggle={id => setSelectedMine(prev => toggle(prev, id))}
-              />
-              <TouchableOpacity style={styles.nextBtn} onPress={() => setStep('details')}>
                 <Text style={styles.nextBtnText}>Siguiente: detalles →</Text>
               </TouchableOpacity>
             </>
@@ -256,9 +226,13 @@ export default function NuevaPropuestaScreen() {
                 <Text style={styles.summaryTitle}>Resumen</Text>
                 <Text style={styles.summarySub}>
                   {selectedTheir.size} carta{selectedTheir.size !== 1 ? 's' : ''} solicitada{selectedTheir.size !== 1 ? 's' : ''}
-                  {type === 'trade' && selectedMine.size > 0 ? ` · ${selectedMine.size} tuya${selectedMine.size !== 1 ? 's' : ''} a cambio` : ''}
                   {type === 'purchase' && price ? ` · $${price}` : ''}
                 </Text>
+                {type === 'trade' && (
+                  <Text style={styles.summaryHint}>
+                    @{receiverProfile?.username ?? 'el otro'} elegirá qué carta tuya quiere a cambio.
+                  </Text>
+                )}
               </View>
 
               <TouchableOpacity
@@ -278,10 +252,8 @@ export default function NuevaPropuestaScreen() {
   );
 }
 
-function StepBar({ step, type }: { step: Step; type: 'trade' | 'purchase' }) {
-  const steps = type === 'trade'
-    ? [{ key: 'cards', label: 'Sus cartas' }, { key: 'my_cards', label: 'Mis cartas' }, { key: 'details', label: 'Detalles' }]
-    : [{ key: 'cards', label: 'Sus cartas' }, { key: 'details', label: 'Detalles' }];
+function StepBar({ step }: { step: Step }) {
+  const steps = [{ key: 'cards', label: 'Sus cartas' }, { key: 'details', label: 'Detalles' }];
   const activeIdx = steps.findIndex(s => s.key === step);
   return (
     <View style={styles.stepBar}>
@@ -429,6 +401,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: { color: '#F1F5F9', fontSize: 14, fontWeight: '700' },
   summarySub: { color: '#94A3B8', fontSize: 13 },
+  summaryHint: { color: '#64748B', fontSize: 12, lineHeight: 17, marginTop: 4 },
 
   nextBtn: {
     backgroundColor: '#6366F1', borderRadius: 14, paddingVertical: 16,
