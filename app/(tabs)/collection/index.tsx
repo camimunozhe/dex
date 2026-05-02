@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency';
+import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 import { getUsdToClp } from '@/lib/exchangeRate';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -235,6 +236,16 @@ export default function CollectionScreen() {
   }
 
   async function assignFolder(cardId: string, folderId: string | null) {
+    if (folderId) {
+      const card = allCards.find(c => c.id === cardId);
+      if (card) {
+        const check = await validateFolderGame(folderId, [card.game]);
+        if (!check.ok) {
+          Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+          return;
+        }
+      }
+    }
     await supabase.from('cards_collection').update({ folder_id: folderId }).eq('id', cardId);
     setFolderPickerCard(null);
     setAllCards(prev => prev.filter(c => c.id !== cardId));
@@ -243,6 +254,14 @@ export default function CollectionScreen() {
 
   async function bulkAssignFolder(folderId: string | null) {
     const ids = Array.from(selectedCards);
+    if (folderId) {
+      const games = allCards.filter(c => ids.includes(c.id)).map(c => c.game);
+      const check = await validateFolderGame(folderId, games);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
     await supabase.from('cards_collection').update({ folder_id: folderId }).in('id', ids);
     setBulkFolderOpen(false);
     if (folderId) setAllCards(prev => prev.filter(c => !ids.includes(c.id)));

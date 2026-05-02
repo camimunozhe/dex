@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { TCGGame, CardCondition, CardLanguage, CollectionFolder } from '@/types/database';
+import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -587,6 +588,13 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
   saveRef.current = async () => {
     if (selected.size === 0) return;
     const folderId = await pickFolder();
+    if (folderId) {
+      const check = await validateFolderGame(folderId, [game]);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -749,6 +757,13 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
   saveRef.current = async () => {
     if (selected.size === 0) return;
     const folderId = await pickFolder();
+    if (folderId) {
+      const check = await validateFolderGame(folderId, [game]);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -889,6 +904,13 @@ function ConfirmStep({ game, card, userId, onSave, pickFolder }: {
 
   async function handleSave() {
     const folderId = await pickFolder();
+    if (folderId) {
+      const check = await validateFolderGame(folderId, [game]);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
     setSaving(true);
     const { error } = await upsertCollectionCards([{
       user_id: userId,

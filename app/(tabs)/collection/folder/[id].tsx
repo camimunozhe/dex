@@ -13,6 +13,7 @@ import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database
 import { formatCurrencyValue } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { requestCollectionRefresh } from '@/lib/collectionRefresh';
+import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -242,6 +243,13 @@ function CardPickerModal({
   async function handleAdd() {
     if (selected.size === 0) return;
     setSaving(true);
+    const games = allCards.filter(c => selected.has(c.id)).map(c => c.game);
+    const check = await validateFolderGame(folderId, games);
+    if (!check.ok) {
+      setSaving(false);
+      Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+      return;
+    }
     await supabase
       .from('cards_collection')
       .update({ folder_id: folderId })

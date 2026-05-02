@@ -13,6 +13,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatPrice, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
+import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -144,6 +145,13 @@ export default function CardDetailScreen() {
   }
 
   async function assignFolder(folderId: string | null) {
+    if (folderId && card) {
+      const check = await validateFolderGame(folderId, [card.game]);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
     await supabase.from('cards_collection').update({ folder_id: folderId }).eq('id', id);
     setCard(c => c ? { ...c, folder_id: folderId } : c);
     setShowFolderPicker(false);
