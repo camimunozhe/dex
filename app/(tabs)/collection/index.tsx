@@ -76,6 +76,7 @@ export default function CollectionScreen() {
   const [folderActionFolder, setFolderActionFolder] = useState<CollectionFolder | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [usdToClp, setUsdToClp] = useState(950);
+  const [rateReady, setRateReady] = useState(currency !== 'clp');
 
   const fetchFolders = useCallback(async () => {
     if (!user) return;
@@ -134,11 +135,21 @@ export default function CollectionScreen() {
     if (isFirstMount.current || consumeCollectionRefresh()) {
       isFirstMount.current = false;
       setLoading(true);
-      const tasks: Promise<unknown>[] = [fetchFolders(), fetchCards(), fetchFolderCounts()];
-      if (currency === 'clp') tasks.push(getUsdToClp().then(setUsdToClp));
-      Promise.all(tasks).finally(() => setLoading(false));
+      Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]).finally(() => setLoading(false));
     }
-  }, [fetchCards, fetchFolders, fetchFolderCounts, currency]));
+  }, [fetchCards, fetchFolders, fetchFolderCounts]));
+
+  useEffect(() => {
+    if (currency !== 'clp') { setRateReady(true); return; }
+    let mounted = true;
+    setRateReady(false);
+    getUsdToClp().then(r => {
+      if (!mounted) return;
+      setUsdToClp(r);
+      setRateReady(true);
+    });
+    return () => { mounted = false; };
+  }, [currency]);
 
   async function saveFolderForm() {
     if (!user || !folderForm?.name.trim()) return;
@@ -331,7 +342,7 @@ export default function CollectionScreen() {
         )}
       </View>
 
-      {loading || authLoading ? (
+      {loading || authLoading || !rateReady ? (
         <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />
       ) : (
         <FlatList

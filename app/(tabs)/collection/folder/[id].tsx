@@ -61,6 +61,7 @@ export default function FolderDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [usdToClp, setUsdToClp] = useState(950);
+  const [rateReady, setRateReady] = useState(currency !== 'clp');
 
   const fetchFolder = useCallback(async () => {
     const { data } = await supabase
@@ -84,10 +85,20 @@ export default function FolderDetailScreen() {
 
   useEffect(() => {
     setLoading(true);
-    const tasks: Promise<unknown>[] = [fetchFolder(), fetchCards()];
-    if (currency === 'clp') tasks.push(getUsdToClp().then(setUsdToClp));
-    Promise.all(tasks).finally(() => setLoading(false));
-  }, [fetchFolder, fetchCards, currency]);
+    Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
+  }, [fetchFolder, fetchCards]);
+
+  useEffect(() => {
+    if (currency !== 'clp') { setRateReady(true); return; }
+    let mounted = true;
+    setRateReady(false);
+    getUsdToClp().then(r => {
+      if (!mounted) return;
+      setUsdToClp(r);
+      setRateReady(true);
+    });
+    return () => { mounted = false; };
+  }, [currency]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -129,7 +140,7 @@ export default function FolderDetailScreen() {
   const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
   const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
-  if (loading || authLoading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
+  if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
   if (!folder) return null;
 
   return (

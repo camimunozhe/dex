@@ -74,16 +74,23 @@ export default function CardDetailScreen() {
   }, [user]);
 
   useEffect(() => {
-    const tasks: Promise<unknown>[] = [
+    Promise.all([
       supabase.from('cards_collection')
         .select('*, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
         .eq('id', id).single()
         .then(({ data }) => setCard(data as CardWithPrice)),
       fetchFolders(),
-    ];
-    if (currency === 'clp') tasks.push(getUsdToClp().then(setUsdToClp));
-    Promise.all(tasks).finally(() => setLoading(false));
-  }, [id, fetchFolders, currency]);
+    ]).finally(() => setLoading(false));
+  }, [id, fetchFolders]);
+
+  useEffect(() => {
+    if (currency !== 'clp') return;
+    let mounted = true;
+    getUsdToClp().then(r => {
+      if (mounted) setUsdToClp(r);
+    });
+    return () => { mounted = false; };
+  }, [currency]);
 
   // Initialize price input — price_reference is stored in user's currency, no conversion needed
   useEffect(() => {
