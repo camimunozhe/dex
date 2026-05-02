@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput, Alert, Modal, FlatList, Dimensions,
+  ActivityIndicator, TextInput, Alert, Dimensions,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { resolveEnabledGames } from '@/lib/enabledGames';
+import { DatePickerModal, TimePickerModal, formatDate, formatTime } from '@/lib/DateTimePicker';
 import type { CardCollection } from '@/types/database';
 
 type Step = 'cards' | 'details';
@@ -29,8 +30,11 @@ export default function NuevaPropuestaScreen() {
   const [type, setType] = useState<'trade' | 'purchase'>('trade');
   const [price, setPrice] = useState('');
   const [notes, setNotes] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [date, setDate] = useState<Date | null>(null);
+  const [hour, setHour] = useState<number | null>(null);
+  const [minute, setMinute] = useState<number>(0);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [location, setLocation] = useState('');
 
   const [step, setStep] = useState<Step>('cards');
@@ -58,11 +62,12 @@ export default function NuevaPropuestaScreen() {
 
   async function submit() {
     if (selectedTheir.size === 0) { Alert.alert('Selecciona al menos una carta del otro'); return; }
-    if (!date.trim()) { Alert.alert('Ingresa una fecha'); return; }
+    if (!date) { Alert.alert('Selecciona una fecha'); return; }
 
     setSaving(true);
-    const scheduledAt = buildDateTime(date, time);
-    if (!scheduledAt) { Alert.alert('Fecha inválida. Usa formato DD/MM/AAAA'); setSaving(false); return; }
+    const scheduled = new Date(date);
+    scheduled.setHours(hour ?? 12, minute, 0, 0);
+    const scheduledAt = scheduled.toISOString();
 
     const { data: meetupData, error } = await supabase.from('meetups').insert({
       proposer_id: user!.id,
@@ -161,27 +166,25 @@ export default function NuevaPropuestaScreen() {
               <Text style={styles.sectionTitle}>Detalles del encuentro</Text>
 
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Fecha (DD/MM/AAAA)</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="15/06/2025"
-                  placeholderTextColor="#475569"
-                  keyboardType="numbers-and-punctuation"
-                />
+                <Text style={styles.fieldLabel}>Fecha</Text>
+                <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowDatePicker(true)}>
+                  <Ionicons name="calendar-outline" size={18} color="#94A3B8" />
+                  <Text style={[styles.pickerBtnText, !date && styles.pickerBtnPlaceholder]}>
+                    {date ? formatDate(date) : 'Seleccionar fecha'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#64748B" />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Hora (HH:MM, opcional)</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={time}
-                  onChangeText={setTime}
-                  placeholder="16:00"
-                  placeholderTextColor="#475569"
-                  keyboardType="numbers-and-punctuation"
-                />
+                <Text style={styles.fieldLabel}>Hora (opcional)</Text>
+                <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowTimePicker(true)}>
+                  <Ionicons name="time-outline" size={18} color="#94A3B8" />
+                  <Text style={[styles.pickerBtnText, hour === null && styles.pickerBtnPlaceholder]}>
+                    {hour !== null ? formatTime(hour, minute) : 'Seleccionar hora'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#64748B" />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.field}>
@@ -248,6 +251,21 @@ export default function NuevaPropuestaScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <DatePickerModal
+        visible={showDatePicker}
+        value={date}
+        minDate={new Date()}
+        onClose={() => setShowDatePicker(false)}
+        onPick={d => setDate(d)}
+      />
+      <TimePickerModal
+        visible={showTimePicker}
+        hour={hour ?? 16}
+        minute={minute}
+        onClose={() => setShowTimePicker(false)}
+        onPick={(h, m) => { setHour(h); setMinute(m); }}
+      />
     </SafeAreaView>
   );
 }
@@ -311,17 +329,6 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next;
 }
 
-function buildDateTime(dateStr: string, timeStr: string): string | null {
-  const parts = dateStr.trim().split('/');
-  if (parts.length !== 3) return null;
-  const [d, m, y] = parts.map(Number);
-  if (!d || !m || !y) return null;
-  const hour = timeStr.trim() ? parseInt(timeStr.split(':')[0]) : 12;
-  const min = timeStr.trim() ? parseInt(timeStr.split(':')[1] ?? '0') : 0;
-  const dt = new Date(y, m - 1, d, hour, min);
-  if (isNaN(dt.getTime())) return null;
-  return dt.toISOString();
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
@@ -393,6 +400,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B', borderRadius: 10, borderWidth: 1, borderColor: '#334155',
     padding: 12, color: '#F1F5F9', fontSize: 14,
   },
+  pickerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#1E293B', borderRadius: 10, borderWidth: 1, borderColor: '#334155',
+    paddingHorizontal: 12, paddingVertical: 12,
+  },
+  pickerBtnText: { flex: 1, color: '#F1F5F9', fontSize: 14, fontWeight: '500' },
+  pickerBtnPlaceholder: { color: '#475569', fontWeight: '400' },
 
   summaryBox: {
     backgroundColor: '#1E293B', borderRadius: 12, borderWidth: 1,
