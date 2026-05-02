@@ -13,7 +13,7 @@ import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { availabilityBorder } from '@/lib/cardStyle';
-import { patchCollectionCard, removeCollectionCard, subscribeCollection } from '@/lib/collectionRefresh';
+import { patchCollectionCard, removeCollectionCard, requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -272,6 +272,7 @@ export default function FolderDetailScreen() {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
           await supabase.from('collection_folders').delete().eq('id', id);
+          requestCollectionRefresh();
           router.back();
         },
       },
