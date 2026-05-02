@@ -318,7 +318,7 @@ export default function CollectionScreen() {
     ]);
   }
 
-  const totalCards = allCards.reduce((sum, c) => sum + c.quantity, 0);
+  const totalCards = allUserCards.reduce((sum, c) => sum + c.quantity, 0);
   const unfolderedValue = allCards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
   const folderedValue = Object.values(folderValues).reduce((a, b) => a + b, 0);
   const totalValue = unfolderedValue + folderedValue;
@@ -394,7 +394,7 @@ export default function CollectionScreen() {
               usdToClp={usdToClp}
             />
           )}
-          ListEmptyComponent={<EmptyCollection onAdd={() => router.push('/(tabs)/collection/add')} />}
+          ListEmptyComponent={allUserCards.length === 0 ? <EmptyCollection onAdd={() => router.push('/(tabs)/collection/add')} /> : null}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: selectionMode ? 96 : 20, gap: 8 }}
           refreshControl={
             <RefreshControl
