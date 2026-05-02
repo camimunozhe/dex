@@ -1,4 +1,4 @@
-name: Create Production Builds
+name: Update Production
 
 on:
   push:
@@ -6,11 +6,8 @@ on:
       - main
 
 jobs:
-  build_android:
-    type: build # This job type creates a production build for Android
+  update:
+    type: update
     params:
-      platform: android
-  build_ios:
-    type: build # This job type creates a production build for iOS
-    params:
-      platform: ios
+      branch: production
+      message: ${{ github.event.head_commit.message }}
