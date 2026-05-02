@@ -145,9 +145,14 @@ export default function FolderDetailScreen() {
           <View style={[styles.folderDot, { backgroundColor: folder.color }]} />
           <Text style={styles.title} numberOfLines={1}>{folder.name}</Text>
         </View>
-        <TouchableOpacity onPress={deleteFolder} style={styles.deleteBtn}>
-          <Ionicons name="trash-outline" size={19} color="#EF4444" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.headerIconBtn} hitSlop={8}>
+            <Ionicons name="add" size={24} color="#6366F1" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Text style={styles.subtitle}>{totalCards} cartas</Text>
@@ -171,18 +176,11 @@ export default function FolderDetailScreen() {
           <View style={styles.emptyBox}>
             <Ionicons name="folder-open-outline" size={48} color="#334155" />
             <Text style={styles.emptyTitle}>Carpeta vacía</Text>
-            <Text style={styles.emptyText}>Agrega cartas desde tu colección</Text>
+            <Text style={styles.emptyText}>Toca + para agregar cartas</Text>
           </View>
         }
-        contentContainerStyle={cards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: 100 }}
+        contentContainerStyle={cards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: 24 }}
       />
-
-      <View style={styles.addBar}>
-        <TouchableOpacity style={styles.addBarBtn} onPress={() => setShowPicker(true)}>
-          <Ionicons name="add-circle-outline" size={20} color="#fff" />
-          <Text style={styles.addBarBtnText}>Agregar cartas</Text>
-        </TouchableOpacity>
-      </View>
 
       <CardPickerModal
         visible={showPicker}
@@ -397,25 +395,13 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   folderDot: { width: 10, height: 10, borderRadius: 5 },
   title: { fontSize: 17, fontWeight: '700', color: '#F1F5F9' },
-  deleteBtn: { minWidth: 80, alignItems: 'flex-end' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 80, justifyContent: 'flex-end' },
+  headerIconBtn: { padding: 6 },
   subtitle: { color: '#64748B', fontSize: 13, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
 
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
   emptyText: { color: '#64748B', fontSize: 14, textAlign: 'center' },
-
-  addBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 16, paddingBottom: 28,
-    backgroundColor: '#0F172A',
-    borderTopWidth: 1, borderTopColor: '#1E293B',
-  },
-  addBarBtn: {
-    backgroundColor: '#6366F1', borderRadius: 12,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14,
-  },
-  addBarBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   thumb: {
     width: CARD_WIDTH, margin: 4, alignItems: 'center',
