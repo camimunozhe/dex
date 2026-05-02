@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { requestCollectionRefresh } from '@/lib/collectionRefresh';
+import { requestCollectionRefresh, patchCollectionCard, removeCollectionCard } from '@/lib/collectionRefresh';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -109,7 +109,7 @@ export default function CardDetailScreen() {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
           await supabase.from('cards_collection').delete().eq('id', id);
-          requestCollectionRefresh();
+          removeCollectionCard(id);
           router.back();
         },
       },
@@ -119,7 +119,7 @@ export default function CardDetailScreen() {
   async function toggleField(field: 'is_for_trade' | 'is_for_sale', value: boolean) {
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', id);
     setCard(c => c ? { ...c, [field]: value } : c);
-    requestCollectionRefresh();
+    patchCollectionCard(id, { [field]: value });
   }
 
   async function savePrice() {
@@ -128,7 +128,7 @@ export default function CardDetailScreen() {
     const storeVal = inputNum !== null && !isNaN(inputNum) ? inputNum : null;
     await supabase.from('cards_collection').update({ price_reference: storeVal }).eq('id', id);
     setCard(c => c ? { ...c, price_reference: storeVal } : c);
-    requestCollectionRefresh();
+    patchCollectionCard(id, { price_reference: storeVal });
     setPriceSaving(false);
   }
 
@@ -137,13 +137,14 @@ export default function CardDetailScreen() {
     setPriceSaving(true);
     await supabase.from('cards_collection').update({ price_reference: null }).eq('id', id);
     setCard(c => c ? { ...c, price_reference: null } : c);
-    requestCollectionRefresh();
+    patchCollectionCard(id, { price_reference: null });
     setPriceSaving(false);
   }
 
   async function saveCondition(condition: import('@/types/database').CardCondition) {
     await supabase.from('cards_collection').update({ condition }).eq('id', id);
     setCard(c => c ? { ...c, condition } : c);
+    patchCollectionCard(id, { condition });
     setShowConditionPicker(false);
   }
 

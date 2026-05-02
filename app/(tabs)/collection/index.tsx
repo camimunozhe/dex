@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { consumeCollectionRefresh, requestCollectionRefresh } from '@/lib/collectionRefresh';
+import { consumeCollectionRefresh, requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
@@ -146,6 +146,18 @@ export default function CollectionScreen() {
       Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]).finally(() => setLoading(false));
     }
   }, [fetchCards, fetchFolders, fetchFolderCounts]));
+
+  useEffect(() => {
+    return subscribeCollection(event => {
+      if (event.type === 'patch') {
+        setAllCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+        setFolderedRows(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+      } else if (event.type === 'remove') {
+        setAllCards(prev => prev.filter(c => c.id !== event.cardId));
+        setFolderedRows(prev => prev.filter(c => c.id !== event.cardId));
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (currency !== 'clp') { setRateReady(true); return; }

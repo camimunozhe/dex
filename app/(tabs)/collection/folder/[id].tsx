@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
-import { requestCollectionRefresh } from '@/lib/collectionRefresh';
+import { requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -87,6 +87,16 @@ export default function FolderDetailScreen() {
     setLoading(true);
     Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
   }, [fetchFolder, fetchCards]);
+
+  useEffect(() => {
+    return subscribeCollection(event => {
+      if (event.type === 'patch') {
+        setCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+      } else if (event.type === 'remove') {
+        setCards(prev => prev.filter(c => c.id !== event.cardId));
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (currency !== 'clp') { setRateReady(true); return; }
