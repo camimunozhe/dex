@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
+import { subscribeCollection } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
@@ -60,14 +60,13 @@ export default function CollectionScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
-  const [allCards, setAllCards] = useState<CardCollectionWithPrice[]>([]);
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterGame, setFilterGame] = useState<TCGGame | 'all'>('all');
   const [folderForm, setFolderForm] = useState<FolderForm | null>(null);
   const [folderPickerCard, setFolderPickerCard] = useState<CardCollection | null>(null);
-  const [folderedRows, setFolderedRows] = useState<CardCollectionWithPrice[]>([]);
+  const [allUserCards, setAllUserCards] = useState<CardCollectionWithPrice[]>([]);
   const [cardActionCard, setCardActionCard] = useState<CardCollectionWithPrice | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
@@ -85,24 +84,18 @@ export default function CollectionScreen() {
     setFolders(data ?? []);
   }, [user]);
 
-  const fetchCards = useCallback(async () => {
+  const fetchAllCards = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
       .select('*, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
-      .eq('user_id', user.id).is('folder_id', null).order('created_at', { ascending: false });
-    setAllCards((data ?? []) as CardCollectionWithPrice[]);
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    setAllUserCards((data ?? []) as CardCollectionWithPrice[]);
   }, [user]);
 
-  const fetchFolderCounts = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('cards_collection')
-      .select('folder_id, quantity, game, card_name, price_reference, is_foil, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
-      .eq('user_id', user.id)
-      .not('folder_id', 'is', null);
-    setFolderedRows((data ?? []) as CardCollectionWithPrice[]);
-  }, [user]);
+  const allCards = useMemo(() => allUserCards.filter(c => c.folder_id === null), [allUserCards]);
+  const folderedRows = useMemo(() => allUserCards.filter(c => c.folder_id !== null), [allUserCards]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -133,9 +126,9 @@ export default function CollectionScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]);
+    await Promise.all([fetchFolders(), fetchAllCards()]);
     setRefreshing(false);
-  }, [fetchCards, fetchFolders, fetchFolderCounts]);
+  }, [fetchAllCards, fetchFolders]);
 
   const isFirstMount = useRef(true);
   const needsRefresh = useRef(false);
@@ -145,18 +138,16 @@ export default function CollectionScreen() {
       isFirstMount.current = false;
       needsRefresh.current = false;
       setLoading(true);
-      Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]).finally(() => setLoading(false));
+      Promise.all([fetchFolders(), fetchAllCards()]).finally(() => setLoading(false));
     }
-  }, [fetchCards, fetchFolders, fetchFolderCounts]));
+  }, [fetchAllCards, fetchFolders]));
 
   useEffect(() => {
     return subscribeCollection(event => {
       if (event.type === 'patch') {
-        setAllCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
-        setFolderedRows(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+        setAllUserCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
       } else if (event.type === 'remove') {
-        setAllCards(prev => prev.filter(c => c.id !== event.cardId));
-        setFolderedRows(prev => prev.filter(c => c.id !== event.cardId));
+        setAllUserCards(prev => prev.filter(c => c.id !== event.cardId));
       } else if (event.type === 'refresh') {
         needsRefresh.current = true;
       }
@@ -202,7 +193,7 @@ export default function CollectionScreen() {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
           await supabase.from('collection_folders').delete().eq('id', folder.id);
-          fetchFolders(); fetchCards();
+          fetchFolders(); fetchAllCards();
         },
       },
     ]);
@@ -247,9 +238,8 @@ export default function CollectionScreen() {
 
   async function handleToggleField(card: CardCollectionWithPrice, field: 'is_for_trade' | 'is_for_sale', value: boolean) {
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', card.id);
-    setAllCards(prev => prev.map(c => c.id === card.id ? { ...c, [field]: value } : c));
+    setAllUserCards(prev => prev.map(c => c.id === card.id ? { ...c, [field]: value } : c));
     setCardActionCard(c => c?.id === card.id ? { ...c, [field]: value } : c);
-    requestCollectionRefresh();
   }
 
   async function handleDeleteCard(cardId: string) {
@@ -259,9 +249,8 @@ export default function CollectionScreen() {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
           await supabase.from('cards_collection').delete().eq('id', cardId);
-          setAllCards(prev => prev.filter(c => c.id !== cardId));
+          setAllUserCards(prev => prev.filter(c => c.id !== cardId));
           setCardActionCard(null);
-          requestCollectionRefresh();
         },
       },
     ]);
@@ -280,8 +269,7 @@ export default function CollectionScreen() {
     }
     await supabase.from('cards_collection').update({ folder_id: folderId }).eq('id', cardId);
     setFolderPickerCard(null);
-    setAllCards(prev => prev.filter(c => c.id !== cardId));
-    fetchFolderCounts();
+    setAllUserCards(prev => prev.map(c => c.id === cardId ? { ...c, folder_id: folderId } : c));
   }
 
   async function bulkAssignFolder(folderId: string | null) {
@@ -296,8 +284,7 @@ export default function CollectionScreen() {
     }
     await supabase.from('cards_collection').update({ folder_id: folderId }).in('id', ids);
     setBulkFolderOpen(false);
-    if (folderId) setAllCards(prev => prev.filter(c => !ids.includes(c.id)));
-    fetchFolderCounts();
+    setAllUserCards(prev => prev.map(c => ids.includes(c.id) ? { ...c, folder_id: folderId } : c));
     exitSelectionMode();
   }
 
@@ -306,8 +293,7 @@ export default function CollectionScreen() {
     const selectedList = allCards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
     await supabase.from('cards_collection').update({ [field]: newValue }).in('id', ids);
-    setAllCards(prev => prev.map(c => selectedCards.has(c.id) ? { ...c, [field]: newValue } : c));
-    requestCollectionRefresh();
+    setAllUserCards(prev => prev.map(c => selectedCards.has(c.id) ? { ...c, [field]: newValue } : c));
     exitSelectionMode();
   }
 
@@ -320,8 +306,7 @@ export default function CollectionScreen() {
         onPress: async () => {
           const ids = Array.from(selectedCards);
           await supabase.from('cards_collection').delete().in('id', ids);
-          setAllCards(prev => prev.filter(c => !ids.includes(c.id)));
-          requestCollectionRefresh();
+          setAllUserCards(prev => prev.filter(c => !ids.includes(c.id)));
           exitSelectionMode();
         },
       },

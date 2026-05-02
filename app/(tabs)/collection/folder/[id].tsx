@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
-import { requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
+import { patchCollectionCard, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -99,14 +99,18 @@ export default function FolderDetailScreen() {
   useEffect(() => {
     return subscribeCollection(event => {
       if (event.type === 'patch') {
-        setCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+        if ('folder_id' in event.patch && event.patch.folder_id !== id) {
+          setCards(prev => prev.filter(c => c.id !== event.cardId));
+        } else {
+          setCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
+        }
       } else if (event.type === 'remove') {
         setCards(prev => prev.filter(c => c.id !== event.cardId));
       } else if (event.type === 'refresh') {
         needsRefresh.current = true;
       }
     });
-  }, []);
+  }, [id]);
 
   useEffect(() => {
     if (currency !== 'clp') { setRateReady(true); return; }
@@ -129,7 +133,7 @@ export default function FolderDetailScreen() {
   async function removeFromFolder(cardId: string) {
     await supabase.from('cards_collection').update({ folder_id: null }).eq('id', cardId);
     setCards(prev => prev.filter(c => c.id !== cardId));
-    requestCollectionRefresh();
+    patchCollectionCard(cardId, { folder_id: null });
   }
 
   function handleCardLongPress(card: CardCollection) {
@@ -318,6 +322,7 @@ function CardPickerModal({
   async function handleAdd() {
     if (selected.size === 0) return;
     setSaving(true);
+    const ids = Array.from(selected);
     const games = allCards.filter(c => selected.has(c.id)).map(c => c.game);
     const check = await validateFolderGame(folderId, games);
     if (!check.ok) {
@@ -328,9 +333,9 @@ function CardPickerModal({
     await supabase
       .from('cards_collection')
       .update({ folder_id: folderId })
-      .in('id', Array.from(selected));
+      .in('id', ids);
     setSaving(false);
-    requestCollectionRefresh();
+    ids.forEach(id => patchCollectionCard(id, { folder_id: folderId }));
     onAdded();
   }
 
