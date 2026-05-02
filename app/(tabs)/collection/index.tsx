@@ -89,7 +89,7 @@ export default function CollectionScreen() {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
-      .select('*, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
+      .select('id, game, card_name, set_name, card_number, quantity, is_foil, is_for_trade, is_for_sale, price_reference, image_url, folder_id, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     setAllUserCards((data ?? []) as CardCollectionWithPrice[]);
