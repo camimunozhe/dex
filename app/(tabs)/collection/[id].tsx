@@ -282,13 +282,13 @@ export default function CardDetailScreen() {
         <View style={styles.switches}>
           <View style={styles.switchRow}>
             <View style={styles.switchLabelRow}>
-              <Ionicons name="swap-horizontal-outline" size={16} color="#22D3EE" />
+              <Ionicons name="swap-horizontal-outline" size={16} color="#3B82F6" />
               <Text style={styles.switchLabel}>Para intercambiar</Text>
             </View>
             <Switch
               value={card.is_for_trade}
               onValueChange={v => toggleField('is_for_trade', v)}
-              trackColor={{ true: '#22D3EE' }}
+              trackColor={{ true: '#3B82F6' }}
             />
           </View>
           <View style={[styles.switchRow, styles.switchRowLast]}>

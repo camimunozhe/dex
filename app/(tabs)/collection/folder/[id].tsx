@@ -370,7 +370,7 @@ export default function FolderDetailScreen() {
             onPress={() => bulkToggleField('is_for_trade')}
             disabled={selectedCards.size === 0}
           >
-            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#22D3EE' : '#475569'} />
+            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#3B82F6' : '#475569'} />
             <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Trade</Text>
           </TouchableOpacity>
           <TouchableOpacity

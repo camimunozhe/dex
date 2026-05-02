@@ -195,7 +195,7 @@ function ExploreHeader({
           style={[styles.filterChip, filterType === 'trade' && styles.filterChipTrade]}
           onPress={() => setFilterType('trade')}
         >
-          <Ionicons name="swap-horizontal-outline" size={14} color={filterType === 'trade' ? '#0F172A' : '#22D3EE'} />
+          <Ionicons name="swap-horizontal-outline" size={14} color={filterType === 'trade' ? '#0F172A' : '#3B82F6'} />
           <Text style={[styles.filterChipText, filterType === 'trade' && styles.filterChipTextTrade]}>Intercambio</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -287,7 +287,7 @@ function CardDetailModal({ card, onClose, onPropose }: { card: ExploreCard | nul
               <View style={styles.modalBadges}>
                 {card.is_for_trade && (
                   <View style={styles.badgeTrade}>
-                    <Ionicons name="swap-horizontal-outline" size={12} color="#22D3EE" />
+                    <Ionicons name="swap-horizontal-outline" size={12} color="#3B82F6" />
                     <Text style={styles.badgeTradeText}>Trade</Text>
                   </View>
                 )}
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B',
   },
   filterChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  filterChipTrade: { backgroundColor: '#22D3EE', borderColor: '#22D3EE' },
+  filterChipTrade: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
   filterChipSale: { backgroundColor: '#4ADE80', borderColor: '#4ADE80' },
   filterChipLogo: { width: 18, height: 18 },
   filterChipText: { color: '#64748B', fontSize: 13 },
@@ -437,9 +437,9 @@ const styles = StyleSheet.create({
   modalBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   badgeTrade: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#22D3EE22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: '#3B82F622', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
   },
-  badgeTradeText: { color: '#22D3EE', fontSize: 12, fontWeight: '600' },
+  badgeTradeText: { color: '#3B82F6', fontSize: 12, fontWeight: '600' },
   badgeSale: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#4ADE8022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,

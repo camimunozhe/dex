@@ -419,7 +419,7 @@ export default function CollectionScreen() {
             onPress={() => bulkToggleField('is_for_trade')}
             disabled={selectedCards.size === 0}
           >
-            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#22D3EE' : '#475569'} />
+            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#3B82F6' : '#475569'} />
             <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Intercambio</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -563,12 +563,12 @@ function CardActionModal({
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <Ionicons name="swap-horizontal-outline" size={20} color="#22D3EE" />
+            <Ionicons name="swap-horizontal-outline" size={20} color="#3B82F6" />
             <Text style={styles.actionRowText}>Para intercambiar</Text>
             <Switch
               value={card.is_for_trade}
               onValueChange={onToggleTrade}
-              trackColor={{ true: '#22D3EE' }}
+              trackColor={{ true: '#3B82F6' }}
               style={{ marginLeft: 'auto' }}
             />
           </View>
