@@ -6,6 +6,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="verify" options={{ presentation: 'modal' }} />
       <Stack.Screen name="games" />
+      <Stack.Screen name="currency" />
     </Stack>
   );
 }

@@ -29,7 +29,6 @@ export default function ProfileScreen() {
   const [meetupCount, setMeetupCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [savingPublic, setSavingPublic] = useState(false);
-  const [savingCurrency, setSavingCurrency] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
@@ -100,13 +99,6 @@ export default function ProfileScreen() {
     }
   }
 
-  async function setCurrency(value: 'usd' | 'clp') {
-    if (savingCurrency || profile?.currency === value) return;
-    setSavingCurrency(true);
-    await supabase.from('profiles').update({ currency: value }).eq('id', user!.id);
-    await refreshProfile();
-    setSavingCurrency(false);
-  }
 
   async function toggleCollectionPublic(value: boolean) {
     setSavingPublic(true);
@@ -215,26 +207,19 @@ export default function ProfileScreen() {
                 trackColor={{ true: '#6366F1' }}
               />
             </View>
-            <View style={[styles.settingRow, { borderBottomWidth: 0 }]}>
-              <View>
+            <TouchableOpacity
+              style={[styles.settingRow, { borderBottomWidth: 0 }]}
+              onPress={() => router.push('/(tabs)/profile/currency')}
+            >
+              <View style={{ flex: 1 }}>
                 <Text style={styles.settingLabel}>Divisa</Text>
                 <Text style={styles.settingDesc}>Para mostrar precios en tu colección</Text>
               </View>
-              <View style={styles.currencyPicker}>
-                {(['usd', 'clp'] as const).map(c => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.currencyBtn, (profile?.currency ?? 'usd') === c && styles.currencyBtnActive]}
-                    onPress={() => setCurrency(c)}
-                    disabled={savingCurrency}
-                  >
-                    <Text style={[styles.currencyBtnText, (profile?.currency ?? 'usd') === c && styles.currencyBtnTextActive]}>
-                      {c.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.settingRowRight}>
+                <Text style={styles.settingValue}>{(profile?.currency ?? 'usd').toUpperCase()}</Text>
+                <Ionicons name="chevron-forward" size={18} color="#64748B" />
               </View>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -375,14 +360,7 @@ const styles = StyleSheet.create({
   repLabelItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   repPositiveText: { color: '#4ADE80', fontSize: 12 },
   repNegativeText: { color: '#EF4444', fontSize: 12 },
-  currencyPicker: { flexDirection: 'row', gap: 6 },
-  currencyBtn: {
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 8, borderWidth: 1, borderColor: '#334155',
-    backgroundColor: '#0F172A',
-  },
-  currencyBtnActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  currencyBtnText: { color: '#64748B', fontSize: 13, fontWeight: '700' },
-  currencyBtnTextActive: { color: '#fff' },
+  settingRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settingValue: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   menuItemSub: { color: '#64748B', fontSize: 12, marginTop: 2 },
 });
