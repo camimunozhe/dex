@@ -59,6 +59,7 @@ export default function CardDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [showConditionPicker, setShowConditionPicker] = useState(false);
+  const [imageZoom, setImageZoom] = useState(false);
   const [priceInput, setPriceInput] = useState('');
   const [priceSaving, setPriceSaving] = useState(false);
   const [usdToClp, setUsdToClp] = useState<number | null>(null);
@@ -185,7 +186,9 @@ export default function CardDetailScreen() {
       <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.heroCard}>
           {card.image_url ? (
-            <Image source={{ uri: card.image_url }} style={styles.heroImage} contentFit="contain" />
+            <TouchableOpacity onPress={() => setImageZoom(true)} activeOpacity={0.85}>
+              <Image source={{ uri: card.image_url }} style={styles.heroImage} contentFit="contain" />
+            </TouchableOpacity>
           ) : (
             <Ionicons name={gameIcon.name} size={72} color={gameIcon.color} style={styles.heroIcon} />
           )}
@@ -361,6 +364,17 @@ export default function CardDetailScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <Modal visible={imageZoom} transparent animationType="fade" onRequestClose={() => setImageZoom(false)}>
+        <TouchableOpacity style={styles.zoomOverlay} activeOpacity={1} onPress={() => setImageZoom(false)}>
+          {card.image_url && (
+            <Image source={{ uri: card.image_url }} style={styles.zoomImage} contentFit="contain" />
+          )}
+          <TouchableOpacity style={styles.zoomClose} onPress={() => setImageZoom(false)} hitSlop={12}>
+            <Ionicons name="close" size={28} color="#F1F5F9" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -389,6 +403,9 @@ const styles = StyleSheet.create({
   },
   heroImage: { width: 180, height: 252, borderRadius: 10, marginBottom: 16 },
   heroIcon: { marginBottom: 12 },
+  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  zoomImage: { width: '92%', aspectRatio: 0.715, borderRadius: 12 },
+  zoomClose: { position: 'absolute', top: 50, right: 20, padding: 8 },
   heroName: { fontSize: 22, fontWeight: '800', color: '#F1F5F9', textAlign: 'center' },
   heroGame: { fontSize: 14, color: '#64748B', marginTop: 4 },
   foilBadge: {
