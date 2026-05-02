@@ -42,7 +42,7 @@ function effectivePrice(
 }
 
 const CARD_WIDTH = (Dimensions.get('window').width - 48) / 3;
-const FOLDER_TILE_WIDTH = Math.round(Dimensions.get('window').width * 0.52);
+const FOLDER_TILE_WIDTH = (Dimensions.get('window').width - 32 - 10) / 2; // 16px lateral padding, 10px gap entre columnas
 const FOLDER_COLORS = ['#6366F1', '#F87171', '#FACC15', '#34D399', '#60A5FA', '#FB923C', '#A78BFA', '#22D3EE'];
 
 const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string; image?: ReturnType<typeof require> }> = {
@@ -737,7 +737,7 @@ function CollectionHeader({
             <Text style={styles.emptyFoldersText}>Crea una carpeta para organizar tu colección</Text>
           </TouchableOpacity>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderTilesRow}>
+          <View style={styles.folderTilesGrid}>
             {folders.map(f => (
               <TouchableOpacity
                 key={f.id}
@@ -752,15 +752,15 @@ function CollectionHeader({
                 <View style={styles.folderTileInfo}>
                   <Text style={styles.folderTileName} numberOfLines={1}>{f.name}</Text>
                   <Text style={styles.folderTileCount}>{folderCounts[f.id] ?? 0} cartas</Text>
+                  {(folderValues[f.id] ?? 0) > 0 && (
+                    <Text style={styles.folderTileValue} numberOfLines={1}>
+                      {formatCurrencyValue(folderValues[f.id], currency)}
+                    </Text>
+                  )}
                 </View>
-                {(folderValues[f.id] ?? 0) > 0 && (
-                  <Text style={styles.folderTileValue} numberOfLines={1}>
-                    {formatCurrencyValue(folderValues[f.id], currency)}
-                  </Text>
-                )}
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         )}
       </View>
 
@@ -958,7 +958,7 @@ const styles = StyleSheet.create({
   },
   emptyFoldersText: { color: '#475569', fontSize: 13 },
 
-  folderTilesRow: { gap: 10, paddingBottom: 2 },
+  folderTilesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   folderTile: {
     width: FOLDER_TILE_WIDTH,
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
   folderTileInfo: { flex: 1 },
   folderTileName: { color: '#F1F5F9', fontSize: 13, fontWeight: '700' },
   folderTileCount: { color: '#64748B', fontSize: 11, marginTop: 2 },
-  folderTileValue: { color: '#4ADE80', fontSize: 13, fontWeight: '700', flexShrink: 0, textAlign: 'right' },
+  folderTileValue: { color: '#4ADE80', fontSize: 12, fontWeight: '700', marginTop: 2 },
 
   filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   filterChip: {
