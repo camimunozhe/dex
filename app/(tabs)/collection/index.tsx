@@ -67,8 +67,7 @@ export default function CollectionScreen() {
   const [filterGame, setFilterGame] = useState<TCGGame | 'all'>('all');
   const [folderForm, setFolderForm] = useState<FolderForm | null>(null);
   const [folderPickerCard, setFolderPickerCard] = useState<CardCollection | null>(null);
-  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
-  const [folderValues, setFolderValues] = useState<Record<string, number>>({});
+  const [folderedRows, setFolderedRows] = useState<CardCollectionWithPrice[]>([]);
   const [cardActionCard, setCardActionCard] = useState<CardCollectionWithPrice | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
@@ -99,20 +98,29 @@ export default function CollectionScreen() {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
-      .select('folder_id, quantity, price_reference, is_foil, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
+      .select('folder_id, quantity, game, card_name, price_reference, is_foil, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
       .eq('user_id', user.id)
       .not('folder_id', 'is', null);
+    setFolderedRows((data ?? []) as CardCollectionWithPrice[]);
+  }, [user]);
+
+  const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    for (const row of folderedRows) {
+      if (row.folder_id) counts[row.folder_id] = (counts[row.folder_id] ?? 0) + row.quantity;
+    }
+    return counts;
+  }, [folderedRows]);
+
+  const folderValues = useMemo(() => {
     const values: Record<string, number> = {};
-    for (const row of (data ?? []) as CardCollectionWithPrice[]) {
+    for (const row of folderedRows) {
       if (row.folder_id) {
-        counts[row.folder_id] = (counts[row.folder_id] ?? 0) + row.quantity;
         values[row.folder_id] = (values[row.folder_id] ?? 0) + effectivePrice(row, currency, usdToClp) * row.quantity;
       }
     }
-    setFolderCounts(counts);
-    setFolderValues(values);
-  }, [user, currency, usdToClp]);
+    return values;
+  }, [folderedRows, currency, usdToClp]);
 
   const uniqueGames = useMemo(() => new Set(allCards.map(c => c.game as TCGGame)), [allCards]);
 
