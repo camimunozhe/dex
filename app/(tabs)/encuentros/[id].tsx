@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEnabledGames } from '@/lib/enabledGames';
 import type { Meetup, CardCollection } from '@/types/database';
 
 type CardWithMeta = CardCollection & {
@@ -30,7 +31,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
 
 export default function EncuentroDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
 
   const [meetup, setMeetup] = useState<MeetupFull | null>(null);
@@ -92,10 +93,11 @@ export default function EncuentroDetailScreen() {
     setLoadingEdit(true);
     const otherUserId = isProposer ? meetup.receiver_id : meetup.proposer_id;
 
+    const enabled = resolveEnabledGames(profile?.enabled_games);
     const [myRes, theirRes] = await Promise.all([
-      supabase.from('cards_collection').select('*').eq('user_id', user?.id).order('card_name'),
+      supabase.from('cards_collection').select('*').eq('user_id', user?.id).in('game', enabled).order('card_name'),
       supabase.from('cards_collection').select('*').eq('user_id', otherUserId)
-        .or('is_for_trade.eq.true,is_for_sale.eq.true').order('card_name'),
+        .or('is_for_trade.eq.true,is_for_sale.eq.true').in('game', enabled).order('card_name'),
     ]);
 
     setMyCollection(myRes.data ?? []);

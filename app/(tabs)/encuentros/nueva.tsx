@@ -9,13 +9,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEnabledGames } from '@/lib/enabledGames';
 import type { CardCollection } from '@/types/database';
 
 type Step = 'cards' | 'my_cards' | 'details';
 
 export default function NuevaPropuestaScreen() {
   const { receiver_id, card_id } = useLocalSearchParams<{ receiver_id: string; card_id: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
 
   // Receiver info
@@ -39,23 +40,25 @@ export default function NuevaPropuestaScreen() {
   const [saving, setSaving] = useState(false);
 
   const loadData = useCallback(async () => {
+    const enabled = resolveEnabledGames(profile?.enabled_games);
     const [profileRes, theirRes, mineRes] = await Promise.all([
       supabase.from('profiles').select('username, avatar_url').eq('id', receiver_id).single(),
       supabase.from('cards_collection')
         .select('*')
         .eq('user_id', receiver_id)
         .or('is_for_trade.eq.true,is_for_sale.eq.true')
+        .in('game', enabled)
         .order('created_at', { ascending: false }),
       supabase.from('cards_collection')
         .select('*')
         .eq('user_id', user!.id)
-        .is('folder_id', null)
+        .in('game', enabled)
         .order('created_at', { ascending: false }),
     ]);
     setReceiverProfile(profileRes.data as any);
     setTheirCards((theirRes.data ?? []) as CardCollection[]);
     setMyCards((mineRes.data ?? []) as CardCollection[]);
-  }, [receiver_id, user]);
+  }, [receiver_id, user, profile?.enabled_games]);
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
