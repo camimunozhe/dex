@@ -60,6 +60,7 @@ export default function FolderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
   const [usdToClp, setUsdToClp] = useState(950);
   const [rateReady, setRateReady] = useState(currency !== 'clp');
 
@@ -143,20 +144,17 @@ export default function FolderDetailScreen() {
     ]);
   }
 
-  function showAddOptions() {
+  function openSearchNewCard() {
+    setShowAddSheet(false);
     const folderGame = cards[0]?.game ?? null;
-    Alert.alert('Agregar cartas', undefined, [
-      {
-        text: 'Buscar nueva carta',
-        onPress: () => {
-          const qs = new URLSearchParams({ folderId: String(id) });
-          if (folderGame) qs.set('game', folderGame);
-          router.push(`/(tabs)/collection/add?${qs.toString()}`);
-        },
-      },
-      { text: 'De mi colección', onPress: () => setShowPicker(true) },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+    const qs = new URLSearchParams({ folderId: String(id) });
+    if (folderGame) qs.set('game', folderGame);
+    router.push(`/(tabs)/collection/add?${qs.toString()}`);
+  }
+
+  function openExistingPicker() {
+    setShowAddSheet(false);
+    setShowPicker(true);
   }
 
   async function deleteFolder() {
@@ -190,7 +188,7 @@ export default function FolderDetailScreen() {
           <Text style={styles.title} numberOfLines={1}>{folder.name}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={showAddOptions} style={styles.headerIconBtn} hitSlop={8}>
+          <TouchableOpacity onPress={() => setShowAddSheet(true)} style={styles.headerIconBtn} hitSlop={8}>
             <Ionicons name="add" size={24} color="#6366F1" />
           </TouchableOpacity>
           <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
@@ -239,6 +237,33 @@ export default function FolderDetailScreen() {
         onClose={() => setShowPicker(false)}
         onAdded={() => { setShowPicker(false); fetchCards(); }}
       />
+
+      <Modal visible={showAddSheet} transparent animationType="slide" onRequestClose={() => setShowAddSheet(false)}>
+        <TouchableOpacity style={styles.sheetOverlay} onPress={() => setShowAddSheet(false)} activeOpacity={1}>
+          <TouchableOpacity activeOpacity={1} onPress={e => e.stopPropagation()}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Agregar cartas</Text>
+              <TouchableOpacity style={styles.sheetOption} onPress={openSearchNewCard}>
+                <Ionicons name="search-outline" size={20} color="#6366F1" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetOptionText}>Buscar nueva carta</Text>
+                  <Text style={styles.sheetOptionDesc}>Por set o por nombre</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#64748B" />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.sheetOption, { borderBottomWidth: 0 }]} onPress={openExistingPicker}>
+                <Ionicons name="albums-outline" size={20} color="#6366F1" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetOptionText}>De mi colección</Text>
+                  <Text style={styles.sheetOptionDesc}>Mover cartas que ya tenés</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -451,6 +476,24 @@ const styles = StyleSheet.create({
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
   emptyText: { color: '#64748B', fontSize: 14, textAlign: 'center' },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 32,
+  },
+  sheetHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#334155', alignSelf: 'center', marginTop: 12, marginBottom: 4,
+  },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#F1F5F9', padding: 16, paddingBottom: 8 },
+  sheetOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#334155',
+  },
+  sheetOptionText: { color: '#F1F5F9', fontSize: 15, fontWeight: '600' },
+  sheetOptionDesc: { color: '#64748B', fontSize: 12, marginTop: 2 },
 
   thumb: {
     width: CARD_WIDTH, margin: 4, alignItems: 'center',
