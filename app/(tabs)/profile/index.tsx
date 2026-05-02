@@ -9,8 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { ALL_GAMES, GAME_DISPLAY_NAMES, resolveEnabledGames } from '@/lib/enabledGames';
-import type { TCGGame } from '@/types/database';
+import { GAME_DISPLAY_NAMES, resolveEnabledGames } from '@/lib/enabledGames';
 
 type Reputation = { positive_count: number; negative_count: number; total_ratings: number } | null;
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -31,7 +30,6 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [savingPublic, setSavingPublic] = useState(false);
   const [savingCurrency, setSavingCurrency] = useState(false);
-  const [savingGames, setSavingGames] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
@@ -115,22 +113,6 @@ export default function ProfileScreen() {
     await supabase.from('profiles').update({ collection_public: value }).eq('id', user!.id);
     await refreshProfile();
     setSavingPublic(false);
-  }
-
-  async function toggleGame(game: TCGGame) {
-    if (savingGames) return;
-    const current = resolveEnabledGames(profile?.enabled_games);
-    const next = current.includes(game)
-      ? current.filter(g => g !== game)
-      : [...current, game];
-    if (next.length === 0) {
-      Alert.alert('Selecciona al menos uno', 'Necesitas tener al menos un juego habilitado.');
-      return;
-    }
-    setSavingGames(true);
-    await supabase.from('profiles').update({ enabled_games: next }).eq('id', user!.id);
-    await refreshProfile();
-    setSavingGames(false);
   }
 
   async function handleSignOut() {
@@ -258,24 +240,22 @@ export default function ProfileScreen() {
 
         {/* Juegos */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Juegos en los que coleccionás</Text>
-          <View style={styles.gamesGrid}>
-            {ALL_GAMES.filter(g => g !== 'other').map(g => {
-              const enabled = (profile?.enabled_games ?? ALL_GAMES).includes(g);
-              return (
-                <TouchableOpacity
-                  key={g}
-                  style={[styles.gameChip, enabled && styles.gameChipActive]}
-                  onPress={() => toggleGame(g)}
-                  disabled={savingGames}
-                >
-                  <Text style={[styles.gameChipText, enabled && styles.gameChipTextActive]}>
-                    {GAME_DISPLAY_NAMES[g]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <Text style={styles.sectionTitle}>Preferencias</Text>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => router.push('/(tabs)/profile/games')}
+          >
+            <View style={styles.menuItemContent}>
+              <Ionicons name="game-controller-outline" size={18} color="#94A3B8" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuItemText}>Juegos</Text>
+                <Text style={styles.menuItemSub}>
+                  {resolveEnabledGames(profile?.enabled_games).filter(g => g !== 'other').map(g => GAME_DISPLAY_NAMES[g].split(':')[0]).join(' · ')}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" />
+          </TouchableOpacity>
         </View>
 
         {/* Verificación */}
@@ -404,13 +384,5 @@ const styles = StyleSheet.create({
   currencyBtnActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
   currencyBtnText: { color: '#64748B', fontSize: 13, fontWeight: '700' },
   currencyBtnTextActive: { color: '#fff' },
-  gamesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  gameChip: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 16, borderWidth: 1, borderColor: '#334155',
-    backgroundColor: '#1E293B',
-  },
-  gameChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  gameChipText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  gameChipTextActive: { color: '#fff' },
+  menuItemSub: { color: '#64748B', fontSize: 12, marginTop: 2 },
 });
