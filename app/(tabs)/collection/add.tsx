@@ -13,6 +13,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { TCGGame, CardCondition, CardLanguage } from '@/types/database';
 import { getOrCreateDefaultFolder } from '@/lib/defaultFolders';
+import { getUsdToClp } from '@/lib/exchangeRate';
+import { formatPrice, currencyLabel } from '@/lib/currency';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -172,7 +174,8 @@ async function upsertCollectionCards(rows: CardInsertRow[]): Promise<{ error: an
 type SaveCtx = { total: number; saving: boolean; save: () => void };
 
 export default function AddCardScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ folderId?: string; game?: TCGGame }>();
@@ -183,6 +186,14 @@ export default function AddCardScreen() {
   );
   const [saved, setSaved] = useState(false);
   const [saveCtx, setSaveCtx] = useState<SaveCtx | null>(null);
+  const [usdToClp, setUsdToClp] = useState(950);
+
+  useEffect(() => {
+    if (currency !== 'clp') return;
+    let mounted = true;
+    getUsdToClp().then(r => { if (mounted) setUsdToClp(r); });
+    return () => { mounted = false; };
+  }, [currency]);
 
   async function resolveFolderId(game: TCGGame): Promise<string | null> {
     if (lockedFolderId) return lockedFolderId;
@@ -275,6 +286,8 @@ export default function AddCardScreen() {
           onSave={onSave}
           onCtxChange={setSaveCtx}
           resolveFolderId={resolveFolderId}
+          currency={currency}
+          usdToClp={usdToClp}
         />
       )}
       {current.page === 'search-name' && (
@@ -284,10 +297,12 @@ export default function AddCardScreen() {
           onSave={onSave}
           onCtxChange={setSaveCtx}
           resolveFolderId={resolveFolderId}
+          currency={currency}
+          usdToClp={usdToClp}
         />
       )}
 {current.page === 'confirm' && (
-        <ConfirmStep game={current.game} card={current.card} userId={user!.id} onSave={onSave} resolveFolderId={resolveFolderId} />
+        <ConfirmStep game={current.game} card={current.card} userId={user!.id} onSave={onSave} resolveFolderId={resolveFolderId} currency={currency} usdToClp={usdToClp} />
       )}
     </SafeAreaView>
   );
@@ -485,13 +500,15 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
 
 type Selection = { card: PkmCard; qty: number };
 
-function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolderId }: {
+function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolderId, currency, usdToClp }: {
   setId: string;
   game: TCGGame;
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
   resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  currency: import('@/types/database').Currency;
+  usdToClp: number;
 }) {
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -623,7 +640,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
               <View style={styles.thumbFooter}>
                 <Text style={styles.thumbNum}>#{item.number}</Text>
                 <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
-                {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>${p % 1 === 0 ? p : p.toFixed(2)}</Text> : null; })()}
+                {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>{formatPrice(p, currency, usdToClp)}</Text> : null; })()}
               </View>
               {qty > 0 && (
                 <TouchableOpacity style={styles.qtyBadge} onPress={() => removeCard(item.id)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
@@ -674,12 +691,14 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
 
 // ─── Step: Search by name ─────────────────────────────────────────────────────
 
-function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId }: {
+function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, currency, usdToClp }: {
   game: TCGGame;
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
   resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  currency: import('@/types/database').Currency;
+  usdToClp: number;
 }) {
   const [query, setQuery] = useState('');
   const [cards, setCards] = useState<PkmCard[]>([]);
@@ -796,7 +815,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId }: 
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <Text style={[styles.thumbNum, { flex: 1 }]} numberOfLines={1}>{item.set_name}</Text>
-                  {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>${p % 1 === 0 ? p : p.toFixed(2)}</Text> : null; })()}
+                  {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>{formatPrice(p, currency, usdToClp)}</Text> : null; })()}
                 </View>
                 {qty > 0 && (
                   <TouchableOpacity style={styles.qtyBadge} onPress={() => removeCard(item.id)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
@@ -859,8 +878,11 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId }: 
 
 // ─── Step: Confirm (after API card selection) ─────────────────────────────────
 
-function ConfirmStep({ game, card, userId, onSave, resolveFolderId }: {
-  game: TCGGame; card: PkmCard; userId: string; onSave: () => void; resolveFolderId: (game: TCGGame) => Promise<string | null>;
+function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, usdToClp }: {
+  game: TCGGame; card: PkmCard; userId: string; onSave: () => void;
+  resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  currency: import('@/types/database').Currency;
+  usdToClp: number;
 }) {
   const [condition, setCondition] = useState<CardCondition>('mint');
   const [quantity, setQuantity] = useState('1');
@@ -918,8 +940,8 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId }: {
           <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} keyboardType="number-pad" placeholder="1" placeholderTextColor="#475569" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Precio ref. (USD)</Text>
-          <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#475569" />
+          <Text style={styles.fieldLabel}>Precio ref. ({currencyLabel(currency)})</Text>
+          <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType={currency === 'clp' ? 'number-pad' : 'decimal-pad'} placeholder={currency === 'clp' ? '0' : '0.00'} placeholderTextColor="#475569" />
         </View>
       </View>
 
