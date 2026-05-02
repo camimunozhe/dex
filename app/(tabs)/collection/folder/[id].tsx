@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, RefreshControl,
@@ -68,6 +68,7 @@ export default function FolderDetailScreen() {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [allFolders, setAllFolders] = useState<CollectionFolder[]>([]);
   const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<'number' | 'name' | 'value'>('number');
 
   const fetchFolder = useCallback(async () => {
     const { data } = await supabase
@@ -270,6 +271,25 @@ export default function FolderDetailScreen() {
   const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
   const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
+  const sortedCards = useMemo(() => {
+    const arr = [...cards];
+    if (sortBy === 'number') {
+      arr.sort((a, b) => {
+        const an = parseInt(a.card_number ?? '', 10);
+        const bn = parseInt(b.card_number ?? '', 10);
+        if (Number.isNaN(an) && Number.isNaN(bn)) return (a.card_number ?? '').localeCompare(b.card_number ?? '');
+        if (Number.isNaN(an)) return 1;
+        if (Number.isNaN(bn)) return -1;
+        return an - bn;
+      });
+    } else if (sortBy === 'name') {
+      arr.sort((a, b) => a.card_name.localeCompare(b.card_name));
+    } else if (sortBy === 'value') {
+      arr.sort((a, b) => effectivePrice(b, currency, usdToClp) - effectivePrice(a, currency, usdToClp));
+    }
+    return arr;
+  }, [cards, sortBy, currency, usdToClp]);
+
   if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
   if (!folder) return null;
 
@@ -319,15 +339,33 @@ export default function FolderDetailScreen() {
       </View>
 
       {!selectionMode && (
-        <Text style={styles.subtitle}>
-          {totalCards} cartas{totalValue > 0 ? (
-            <>{'  ·  '}<Text style={styles.subtitleValue}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
-          ) : ''}
-        </Text>
+        <>
+          <Text style={styles.subtitle}>
+            {totalCards} cartas{totalValue > 0 ? (
+              <>{'  ·  '}<Text style={styles.subtitleValue}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
+            ) : ''}
+          </Text>
+          {cards.length > 1 && (
+            <View style={styles.sortRow}>
+              <Text style={styles.sortLabel}>Ordenar:</Text>
+              {(['number', 'name', 'value'] as const).map(key => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.sortChip, sortBy === key && styles.sortChipActive]}
+                  onPress={() => setSortBy(key)}
+                >
+                  <Text style={[styles.sortChipText, sortBy === key && styles.sortChipTextActive]}>
+                    {key === 'number' ? 'N°' : key === 'name' ? 'Nombre' : 'Valor'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </>
       )}
 
       <FlatList
-        data={cards}
+        data={sortedCards}
         keyExtractor={item => item.id}
         numColumns={3}
         columnWrapperStyle={{ justifyContent: 'flex-start' }}
@@ -674,6 +712,15 @@ const styles = StyleSheet.create({
   headerIconBtn: { padding: 6 },
   subtitle: { color: '#64748B', fontSize: 13, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   subtitleValue: { color: '#4ADE80' },
+  sortRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  sortLabel: { color: '#64748B', fontSize: 12, fontWeight: '600' },
+  sortChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
+    backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
+  },
+  sortChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  sortChipText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  sortChipTextActive: { color: '#fff' },
 
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
