@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
-import { formatCurrencyValue } from '@/lib/currency';
+import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
@@ -130,6 +130,7 @@ export default function FolderDetailScreen() {
   }
 
   const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
+  const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
   if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
   if (!folder) return null;
@@ -155,7 +156,11 @@ export default function FolderDetailScreen() {
         </View>
       </View>
 
-      <Text style={styles.subtitle}>{totalCards} cartas</Text>
+      <Text style={styles.subtitle}>
+        {totalCards} cartas{totalValue > 0 ? (
+          <>{'  ·  '}<Text style={styles.subtitleValue}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
+        ) : ''}
+      </Text>
 
       <FlatList
         data={cards}
@@ -398,6 +403,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 80, justifyContent: 'flex-end' },
   headerIconBtn: { padding: 6 },
   subtitle: { color: '#64748B', fontSize: 13, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  subtitleValue: { color: '#4ADE80' },
 
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
