@@ -409,7 +409,7 @@ function PokemonSetsStep({ onSelect }: { onSelect: (id: string, name: string) =>
     setFiltered(sets.filter(s => s.name.toLowerCase().includes(q) || s.series.toLowerCase().includes(q)));
   }, [search, sets]);
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#94A3B8" />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -472,7 +472,7 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
     setFiltered(sets.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)));
   }, [search, sets]);
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#A78BFA" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#94A3B8" />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -633,7 +633,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, pickFolder }
     return () => onCtxChange(null);
   }, []);
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 40 }} color="#94A3B8" />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -812,7 +812,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, pickFolder }: {
         placeholderTextColor="#475569"
         autoFocus
       />
-      {loading && <ActivityIndicator style={{ marginTop: 24 }} color="#6366F1" />}
+      {loading && <ActivityIndicator style={{ marginTop: 24 }} color="#94A3B8" />}
       {!loading && (
         <FlatList
           data={cards}

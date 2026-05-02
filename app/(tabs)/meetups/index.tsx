@@ -114,7 +114,7 @@ export default function ExploreScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />
+        <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />
       ) : (
         <FlatList
           data={cards}

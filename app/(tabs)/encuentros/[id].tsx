@@ -74,7 +74,7 @@ export default function EncuentroDetailScreen() {
     load().finally(() => setLoading(false));
   }, [load]);
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />;
   if (!meetup) return null;
 
   const isProposer = meetup.proposer_id === user?.id;
@@ -345,7 +345,7 @@ export default function EncuentroDetailScreen() {
           </View>
 
           {loadingEdit ? (
-            <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />
+            <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />
           ) : (
             <ScrollView contentContainerStyle={{ padding: 16, gap: 24, paddingBottom: 48 }}>
 

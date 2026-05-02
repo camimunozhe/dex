@@ -161,7 +161,7 @@ export default function CardDetailScreen() {
     setShowFolderPicker(false);
   }
 
-  if (loading || authLoading) return <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />;
+  if (loading || authLoading) return <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />;
   if (!card) return null;
 
   const gameIcon = GAME_ICON[card.game];
@@ -249,7 +249,7 @@ export default function CardDetailScreen() {
                     />
                     <TouchableOpacity onPress={savePrice} disabled={priceSaving} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       {priceSaving
-                        ? <ActivityIndicator size="small" color="#6366F1" />
+                        ? <ActivityIndicator size="small" color="#94A3B8" />
                         : <Ionicons name="checkmark-circle-outline" size={22} color="#6366F1" />}
                     </TouchableOpacity>
                   </View>

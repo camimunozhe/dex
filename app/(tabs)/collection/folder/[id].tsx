@@ -266,7 +266,7 @@ export default function FolderDetailScreen() {
   const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
   const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
-  if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
+  if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
   if (!folder) return null;
 
   return (
@@ -554,7 +554,7 @@ function CardPickerModal({
         />
 
         {loading ? (
-          <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />
+          <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />
         ) : (
           <FlatList
             data={filtered}

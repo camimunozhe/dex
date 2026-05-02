@@ -98,7 +98,7 @@ export default function NuevaPropuestaScreen() {
     ]);
   }
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />;
 
   return (
     <SafeAreaView style={styles.container}>

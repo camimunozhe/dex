@@ -141,7 +141,7 @@ export default function MeetupDetailScreen() {
     setActionLoading(false);
   }
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
   if (!meetup) return null;
 
   const date = new Date(meetup.scheduled_at);
@@ -210,7 +210,7 @@ export default function MeetupDetailScreen() {
 
         {/* Acciones según estado */}
         {actionLoading ? (
-          <ActivityIndicator color="#6366F1" style={{ marginVertical: 20 }} />
+          <ActivityIndicator color="#94A3B8" style={{ marginVertical: 20 }} />
         ) : (
           <View style={styles.actions}>
             {/* Receiver puede confirmar si está pendiente */}

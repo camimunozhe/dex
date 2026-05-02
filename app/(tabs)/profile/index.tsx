@@ -127,7 +127,7 @@ export default function ProfileScreen() {
     ? Math.round((reputation.positive_count / reputation.total_ratings) * 100)
     : null;
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
 
   return (
     <SafeAreaView style={styles.container}>
