@@ -122,11 +122,6 @@ export default function CollectionScreen() {
     return result;
   }, [allCards, filterGame, search]);
 
-  useEffect(() => {
-    if (currency !== 'clp') return;
-    getUsdToClp().then(setUsdToClp);
-  }, [currency]);
-
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]);
@@ -139,9 +134,11 @@ export default function CollectionScreen() {
     if (isFirstMount.current || consumeCollectionRefresh()) {
       isFirstMount.current = false;
       setLoading(true);
-      Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]).finally(() => setLoading(false));
+      const tasks: Promise<unknown>[] = [fetchFolders(), fetchCards(), fetchFolderCounts()];
+      if (currency === 'clp') tasks.push(getUsdToClp().then(setUsdToClp));
+      Promise.all(tasks).finally(() => setLoading(false));
     }
-  }, [fetchCards, fetchFolders, fetchFolderCounts]));
+  }, [fetchCards, fetchFolders, fetchFolderCounts, currency]));
 
   async function saveFolderForm() {
     if (!user || !folderForm?.name.trim()) return;

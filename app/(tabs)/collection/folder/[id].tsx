@@ -84,13 +84,10 @@ export default function FolderDetailScreen() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
-  }, [fetchFolder, fetchCards]);
-
-  useEffect(() => {
-    if (currency !== 'clp') return;
-    getUsdToClp().then(setUsdToClp);
-  }, [currency]);
+    const tasks: Promise<unknown>[] = [fetchFolder(), fetchCards()];
+    if (currency === 'clp') tasks.push(getUsdToClp().then(setUsdToClp));
+    Promise.all(tasks).finally(() => setLoading(false));
+  }, [fetchFolder, fetchCards, currency]);
 
   async function onRefresh() {
     setRefreshing(true);
