@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
-import { patchCollectionCard, subscribeCollection } from '@/lib/collectionRefresh';
+import { patchCollectionCard, removeCollectionCard, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -63,6 +63,10 @@ export default function FolderDetailScreen() {
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [usdToClp, setUsdToClp] = useState(950);
   const [rateReady, setRateReady] = useState(currency !== 'clp');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
+  const [allFolders, setAllFolders] = useState<CollectionFolder[]>([]);
+  const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
 
   const fetchFolder = useCallback(async () => {
     const { data } = await supabase
@@ -84,6 +88,16 @@ export default function FolderDetailScreen() {
     setCards((data ?? []) as CardCollectionWithPrice[]);
   }, [user, id]);
 
+  const fetchAllFolders = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('collection_folders')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+    setAllFolders(data ?? []);
+  }, [user]);
+
   const isFirstMount = useRef(true);
   const needsRefresh = useRef(false);
 
@@ -92,9 +106,9 @@ export default function FolderDetailScreen() {
       isFirstMount.current = false;
       needsRefresh.current = false;
       setLoading(true);
-      Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
+      Promise.all([fetchFolder(), fetchCards(), fetchAllFolders()]).finally(() => setLoading(false));
     }
-  }, [fetchFolder, fetchCards]));
+  }, [fetchFolder, fetchCards, fetchAllFolders]));
 
   useEffect(() => {
     return subscribeCollection(event => {
@@ -136,15 +150,89 @@ export default function FolderDetailScreen() {
     patchCollectionCard(cardId, { folder_id: null });
   }
 
+  function handleCardPress(card: CardCollection) {
+    if (selectionMode) toggleCardSelection(card.id);
+    else router.push(`/(tabs)/collection/${card.id}`);
+  }
+
   function handleCardLongPress(card: CardCollection) {
-    Alert.alert(card.card_name, undefined, [
-      {
-        text: 'Quitar de carpeta',
-        style: 'destructive',
-        onPress: () => removeFromFolder(card.id),
-      },
-      { text: 'Ver detalle', onPress: () => router.push(`/(tabs)/collection/${card.id}`) },
+    if (!selectionMode) {
+      setSelectionMode(true);
+      setSelectedCards(new Set([card.id]));
+    }
+  }
+
+  function toggleCardSelection(id: string) {
+    setSelectedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        if (next.size === 0) setSelectionMode(false);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedCards(new Set());
+  }
+
+  function selectAll() {
+    setSelectedCards(new Set(cards.map(c => c.id)));
+  }
+
+  async function bulkRemoveFromFolder() {
+    const ids = Array.from(selectedCards);
+    await supabase.from('cards_collection').update({ folder_id: null }).in('id', ids);
+    setCards(prev => prev.filter(c => !ids.includes(c.id)));
+    ids.forEach(cardId => patchCollectionCard(cardId, { folder_id: null }));
+    exitSelectionMode();
+  }
+
+  async function bulkAssignFolder(folderId: string | null) {
+    const ids = Array.from(selectedCards);
+    if (folderId) {
+      const games = cards.filter(c => selectedCards.has(c.id)).map(c => c.game);
+      const check = await validateFolderGame(folderId, games);
+      if (!check.ok) {
+        Alert.alert('Carpeta de otro juego', `Esa carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        return;
+      }
+    }
+    await supabase.from('cards_collection').update({ folder_id: folderId }).in('id', ids);
+    setBulkFolderOpen(false);
+    setCards(prev => prev.filter(c => !ids.includes(c.id)));
+    ids.forEach(cardId => patchCollectionCard(cardId, { folder_id: folderId }));
+    exitSelectionMode();
+  }
+
+  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale') {
+    const ids = Array.from(selectedCards);
+    const selectedList = cards.filter(c => selectedCards.has(c.id));
+    const newValue = !selectedList.every(c => c[field]);
+    await supabase.from('cards_collection').update({ [field]: newValue }).in('id', ids);
+    setCards(prev => prev.map(c => selectedCards.has(c.id) ? { ...c, [field]: newValue } : c));
+    ids.forEach(cardId => patchCollectionCard(cardId, { [field]: newValue }));
+    exitSelectionMode();
+  }
+
+  function bulkDelete() {
+    const count = selectedCards.size;
+    Alert.alert(`Eliminar ${count} carta${count !== 1 ? 's' : ''}`, '¿Estás seguro? Esta acción no se puede deshacer.', [
       { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: async () => {
+          const ids = Array.from(selectedCards);
+          await supabase.from('cards_collection').delete().in('id', ids);
+          setCards(prev => prev.filter(c => !ids.includes(c.id)));
+          ids.forEach(cardId => removeCollectionCard(cardId));
+          exitSelectionMode();
+        },
+      },
     ]);
   }
 
@@ -183,29 +271,53 @@ export default function FolderDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={20} color="#6366F1" />
-          <Text style={styles.back}>Colección</Text>
-        </TouchableOpacity>
+        {selectionMode ? (
+          <TouchableOpacity onPress={exitSelectionMode} style={styles.backBtn}>
+            <Text style={styles.selCancelText}>Cancelar</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={20} color="#6366F1" />
+            <Text style={styles.back}>Colección</Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.headerCenter}>
-          <View style={[styles.folderDot, { backgroundColor: folder.color }]} />
-          <Text style={styles.title} numberOfLines={1}>{folder.name}</Text>
+          {selectionMode ? (
+            <Text style={styles.title} numberOfLines={1}>
+              {selectedCards.size} seleccionada{selectedCards.size !== 1 ? 's' : ''}
+            </Text>
+          ) : (
+            <>
+              <View style={[styles.folderDot, { backgroundColor: folder.color }]} />
+              <Text style={styles.title} numberOfLines={1}>{folder.name}</Text>
+            </>
+          )}
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setShowAddSheet(true)} style={styles.headerIconBtn} hitSlop={8}>
-            <Ionicons name="add" size={24} color="#6366F1" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
-          </TouchableOpacity>
+          {selectionMode ? (
+            <TouchableOpacity onPress={selectAll} style={styles.headerIconBtn} hitSlop={8}>
+              <Text style={styles.selAllText}>Todas</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => setShowAddSheet(true)} style={styles.headerIconBtn} hitSlop={8}>
+                <Ionicons name="add" size={24} color="#6366F1" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>
+                <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
-      <Text style={styles.subtitle}>
-        {totalCards} cartas{totalValue > 0 ? (
-          <>{'  ·  '}<Text style={styles.subtitleValue}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
-        ) : ''}
-      </Text>
+      {!selectionMode && (
+        <Text style={styles.subtitle}>
+          {totalCards} cartas{totalValue > 0 ? (
+            <>{'  ·  '}<Text style={styles.subtitleValue}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
+          ) : ''}
+        </Text>
+      )}
 
       <FlatList
         data={cards}
@@ -215,8 +327,10 @@ export default function FolderDetailScreen() {
         renderItem={({ item }) => (
           <CardItem
             card={item}
-            onPress={() => router.push(`/(tabs)/collection/${item.id}`)}
+            onPress={() => handleCardPress(item)}
             onLongPress={() => handleCardLongPress(item)}
+            selected={selectedCards.has(item.id)}
+            selectionMode={selectionMode}
             currency={currency}
             usdToClp={usdToClp}
           />
@@ -229,8 +343,77 @@ export default function FolderDetailScreen() {
             <Text style={styles.emptyText}>Toca + para agregar cartas</Text>
           </View>
         }
-        contentContainerStyle={cards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: 24 }}
+        contentContainerStyle={cards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: selectionMode ? 96 : 24 }}
       />
+
+      {selectionMode && (
+        <View style={styles.selectionActionBar}>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={() => setBulkFolderOpen(true)}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="folder-outline" size={20} color={selectedCards.size > 0 ? '#F1F5F9' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Mover</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={bulkRemoveFromFolder}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="folder-open-outline" size={20} color={selectedCards.size > 0 ? '#94A3B8' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Quitar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={() => bulkToggleField('is_for_trade')}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#22D3EE' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Trade</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={() => bulkToggleField('is_for_sale')}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="pricetag-outline" size={20} color={selectedCards.size > 0 ? '#4ADE80' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Venta</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, styles.selActionBtnDanger, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={bulkDelete}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="trash-outline" size={20} color={selectedCards.size > 0 ? '#EF4444' : '#475569'} />
+            <Text style={[styles.selActionText, { color: selectedCards.size > 0 ? '#EF4444' : '#475569' }]}>Eliminar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal visible={bulkFolderOpen} transparent animationType="slide" onRequestClose={() => setBulkFolderOpen(false)}>
+        <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setBulkFolderOpen(false)}>
+          <TouchableOpacity activeOpacity={1} onPress={e => e.stopPropagation()}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>
+                Mover {selectedCards.size} carta{selectedCards.size !== 1 ? 's' : ''}
+              </Text>
+              {allFolders.filter(f => f.id !== id).map(f => (
+                <TouchableOpacity key={f.id} style={styles.sheetOption} onPress={() => bulkAssignFolder(f.id)}>
+                  <View style={[styles.folderRowIcon, { backgroundColor: f.color + '33' }]}>
+                    <Ionicons name="folder" size={20} color={f.color} />
+                  </View>
+                  <Text style={styles.sheetOptionText}>{f.name}</Text>
+                </TouchableOpacity>
+              ))}
+              {allFolders.filter(f => f.id !== id).length === 0 && (
+                <Text style={styles.noFoldersText}>No tienes otras carpetas.</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <CardPickerModal
         visible={showPicker}
@@ -427,17 +610,19 @@ function CardPickerModal({
 
 // ─── Card item ────────────────────────────────────────────────────────────────
 
-function CardItem({ card, onPress, onLongPress, currency = 'usd', usdToClp = 950 }: {
+function CardItem({ card, onPress, onLongPress, selected, selectionMode, currency = 'usd', usdToClp = 950 }: {
   card: CardCollectionWithPrice;
   onPress: () => void;
   onLongPress: () => void;
+  selected?: boolean;
+  selectionMode?: boolean;
   currency?: import('@/types/database').Currency;
   usdToClp?: number;
 }) {
   const gameIcon = GAME_ICON[card.game];
   const price = effectivePrice(card, currency, usdToClp);
   return (
-    <TouchableOpacity style={styles.thumb} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.thumb, selected && styles.thumbSelected]} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
       {card.image_url ? (
         <Image source={{ uri: card.image_url }} style={styles.thumbImg} contentFit="contain" />
       ) : (
@@ -453,6 +638,11 @@ function CardItem({ card, onPress, onLongPress, currency = 'usd', usdToClp = 950
       {card.quantity > 1 && (
         <View style={styles.qtyBadge}>
           <Text style={styles.qtyText}>×{card.quantity}</Text>
+        </View>
+      )}
+      {selectionMode && (
+        <View style={[styles.selCheckBadge, selected && styles.selCheckBadgeActive]}>
+          {selected && <Ionicons name="checkmark" size={11} color="#fff" />}
         </View>
       )}
     </TouchableOpacity>
@@ -499,6 +689,33 @@ const styles = StyleSheet.create({
   },
   sheetOptionText: { color: '#F1F5F9', fontSize: 15, fontWeight: '600' },
   sheetOptionDesc: { color: '#64748B', fontSize: 12, marginTop: 2 },
+
+  selAllText: { color: '#6366F1', fontSize: 14, fontWeight: '600' },
+  selCancelText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  selCheckBadge: {
+    position: 'absolute', top: 6, left: 6,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#0F172A', borderWidth: 1.5, borderColor: '#475569',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  selCheckBadgeActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  thumbSelected: { borderColor: '#6366F1', borderWidth: 2 },
+  selectionActionBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#1E293B', borderTopWidth: 1, borderTopColor: '#334155',
+    flexDirection: 'row', padding: 12, paddingBottom: 28, gap: 6,
+  },
+  selActionBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderRadius: 12, gap: 4,
+    backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155',
+  },
+  selActionBtnDanger: { borderColor: '#EF444430' },
+  selActionBtnDisabled: { opacity: 0.35 },
+  selActionText: { color: '#F1F5F9', fontSize: 11, fontWeight: '600' },
+  selActionTextDisabled: { color: '#475569' },
+  folderRowIcon: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  noFoldersText: { color: '#64748B', fontSize: 13, padding: 16, textAlign: 'center' },
 
   thumb: {
     width: CARD_WIDTH, margin: 4, alignItems: 'center',
