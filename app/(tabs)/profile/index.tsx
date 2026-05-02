@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Switch, ScrollView, Alert, ActivityIndicator,
+  ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -28,7 +28,6 @@ export default function ProfileScreen() {
   const [collectionCount, setCollectionCount] = useState(0);
   const [meetupCount, setMeetupCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [savingPublic, setSavingPublic] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
@@ -99,13 +98,6 @@ export default function ProfileScreen() {
     }
   }
 
-
-  async function toggleCollectionPublic(value: boolean) {
-    setSavingPublic(true);
-    await supabase.from('profiles').update({ collection_public: value }).eq('id', user!.id);
-    await refreshProfile();
-    setSavingPublic(false);
-  }
 
   async function handleSignOut() {
     Alert.alert('Cerrar sesión', '¿Seguro?', [
@@ -195,25 +187,35 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configuración</Text>
           <View style={styles.settingsList}>
-            <View style={styles.settingRow}>
-              <View>
-                <Text style={styles.settingLabel}>Colección pública</Text>
-                <Text style={styles.settingDesc}>Otros usuarios pueden ver tus cartas</Text>
-              </View>
-              <Switch
-                value={profile?.collection_public ?? false}
-                onValueChange={toggleCollectionPublic}
-                disabled={savingPublic}
-                trackColor={{ true: '#6366F1' }}
-              />
-            </View>
+        {/* Configuración */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Configuración</Text>
+          <View style={styles.settingsList}>
             <TouchableOpacity
-              style={[styles.settingRow, { borderBottomWidth: 0 }]}
+              style={styles.menuItem}
+              onPress={() => router.push('/(tabs)/profile/games')}
+            >
+              <View style={styles.menuItemContent}>
+                <Ionicons name="game-controller-outline" size={18} color="#94A3B8" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.menuItemText}>Juegos</Text>
+                  <Text style={styles.menuItemSub} numberOfLines={1}>
+                    {resolveEnabledGames(profile?.enabled_games).filter(g => g !== 'other').map(g => GAME_DISPLAY_NAMES[g].split(':')[0]).join(' · ')}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#64748B" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemLast]}
               onPress={() => router.push('/(tabs)/profile/currency')}
             >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.settingLabel}>Divisa</Text>
-                <Text style={styles.settingDesc}>Para mostrar precios en tu colección</Text>
+              <View style={styles.menuItemContent}>
+                <Ionicons name="cash-outline" size={18} color="#94A3B8" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.menuItemText}>Divisa</Text>
+                  <Text style={styles.menuItemSub}>Para mostrar precios en tu colección</Text>
+                </View>
               </View>
               <View style={styles.settingRowRight}>
                 <Text style={styles.settingValue}>{(profile?.currency ?? 'usd').toUpperCase()}</Text>
@@ -221,26 +223,6 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Juegos */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferencias</Text>
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => router.push('/(tabs)/profile/games')}
-          >
-            <View style={styles.menuItemContent}>
-              <Ionicons name="game-controller-outline" size={18} color="#94A3B8" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.menuItemText}>Juegos</Text>
-                <Text style={styles.menuItemSub}>
-                  {resolveEnabledGames(profile?.enabled_games).filter(g => g !== 'other').map(g => GAME_DISPLAY_NAMES[g].split(':')[0]).join(' · ')}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#64748B" />
-          </TouchableOpacity>
         </View>
 
         {/* Verificación */}
@@ -335,18 +317,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B', borderRadius: 12,
     borderWidth: 1, borderColor: '#334155', overflow: 'hidden',
   },
-  settingRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, borderBottomWidth: 1, borderBottomColor: '#334155',
-  },
-  settingLabel: { color: '#F1F5F9', fontSize: 14, fontWeight: '500' },
-  settingDesc: { color: '#64748B', fontSize: 12, marginTop: 2 },
   menuItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, borderBottomWidth: 1, borderBottomColor: '#334155',
     backgroundColor: '#1E293B', borderRadius: 0,
   },
   menuItemContent: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  menuItemLast: { borderBottomWidth: 0 },
   menuItemText: { color: '#F1F5F9', fontSize: 14 },
   menuItemDanger: { borderBottomWidth: 0 },
   menuItemDangerText: { color: '#EF4444', fontSize: 14, fontWeight: '600' },
