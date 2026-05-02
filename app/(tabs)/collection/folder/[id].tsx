@@ -69,6 +69,16 @@ export default function FolderDetailScreen() {
   const [allFolders, setAllFolders] = useState<CollectionFolder[]>([]);
   const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
   const [sortBy, setSortBy] = useState<'number' | 'name' | 'value'>('number');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: 'number' | 'name' | 'value') {
+    if (sortBy === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(key);
+      setSortDir(key === 'value' ? 'desc' : 'asc');
+    }
+  }
 
   const fetchFolder = useCallback(async () => {
     const { data } = await supabase
@@ -273,22 +283,23 @@ export default function FolderDetailScreen() {
 
   const sortedCards = useMemo(() => {
     const arr = [...cards];
+    const factor = sortDir === 'asc' ? 1 : -1;
     if (sortBy === 'number') {
       arr.sort((a, b) => {
         const an = parseInt(a.card_number ?? '', 10);
         const bn = parseInt(b.card_number ?? '', 10);
-        if (Number.isNaN(an) && Number.isNaN(bn)) return (a.card_number ?? '').localeCompare(b.card_number ?? '');
+        if (Number.isNaN(an) && Number.isNaN(bn)) return (a.card_number ?? '').localeCompare(b.card_number ?? '') * factor;
         if (Number.isNaN(an)) return 1;
         if (Number.isNaN(bn)) return -1;
-        return an - bn;
+        return (an - bn) * factor;
       });
     } else if (sortBy === 'name') {
-      arr.sort((a, b) => a.card_name.localeCompare(b.card_name));
+      arr.sort((a, b) => a.card_name.localeCompare(b.card_name) * factor);
     } else if (sortBy === 'value') {
-      arr.sort((a, b) => effectivePrice(b, currency, usdToClp) - effectivePrice(a, currency, usdToClp));
+      arr.sort((a, b) => (effectivePrice(a, currency, usdToClp) - effectivePrice(b, currency, usdToClp)) * factor);
     }
     return arr;
-  }, [cards, sortBy, currency, usdToClp]);
+  }, [cards, sortBy, sortDir, currency, usdToClp]);
 
   if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
   if (!folder) return null;
@@ -352,11 +363,19 @@ export default function FolderDetailScreen() {
                 <TouchableOpacity
                   key={key}
                   style={[styles.sortChip, sortBy === key && styles.sortChipActive]}
-                  onPress={() => setSortBy(key)}
+                  onPress={() => toggleSort(key)}
                 >
                   <Text style={[styles.sortChipText, sortBy === key && styles.sortChipTextActive]}>
                     {key === 'number' ? 'N°' : key === 'name' ? 'Nombre' : 'Valor'}
                   </Text>
+                  {sortBy === key && (
+                    <Ionicons
+                      name={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'}
+                      size={11}
+                      color="#fff"
+                      style={{ marginLeft: 3 }}
+                    />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -715,6 +734,7 @@ const styles = StyleSheet.create({
   sortRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   sortLabel: { color: '#64748B', fontSize: 12, fontWeight: '600' },
   sortChip: {
+    flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
     backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
   },
