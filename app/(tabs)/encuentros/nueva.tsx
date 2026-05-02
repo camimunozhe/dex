@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput, Alert, Modal, FlatList,
+  ActivityIndicator, TextInput, Alert, Modal, FlatList, Dimensions,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -13,6 +13,8 @@ import { resolveEnabledGames } from '@/lib/enabledGames';
 import type { CardCollection } from '@/types/database';
 
 type Step = 'cards' | 'my_cards' | 'details';
+
+const CARD_THUMB_WIDTH = (Dimensions.get('window').width - 32 - 16) / 3; // 16px lateral padding × 2, 8px gap × 2
 
 export default function NuevaPropuestaScreen() {
   const { receiver_id, card_id } = useLocalSearchParams<{ receiver_id: string; card_id: string }>();
@@ -386,7 +388,7 @@ const styles = StyleSheet.create({
 
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cardThumb: {
-    width: '30%', backgroundColor: '#1E293B', borderRadius: 10,
+    width: CARD_THUMB_WIDTH, backgroundColor: '#1E293B', borderRadius: 10,
     borderWidth: 1, borderColor: '#334155', padding: 6, alignItems: 'center', gap: 4,
   },
   cardThumbSelected: { borderColor: '#6366F1', borderWidth: 2 },
