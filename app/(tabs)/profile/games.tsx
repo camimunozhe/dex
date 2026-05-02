@@ -22,7 +22,12 @@ export default function GamesScreen() {
       return;
     }
     setSaving(true);
-    await supabase.from('profiles').update({ enabled_games: next }).eq('id', user!.id);
+    const { error } = await supabase.from('profiles').update({ enabled_games: next }).eq('id', user!.id);
+    if (error) {
+      Alert.alert('No se pudo guardar', error.message);
+      setSaving(false);
+      return;
+    }
     await refreshProfile();
     setSaving(false);
   }
