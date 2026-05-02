@@ -6,7 +6,7 @@ import {
   ActivityIndicator, Switch, Dimensions, Modal,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -175,7 +175,12 @@ export default function AddCardScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const navigation = useNavigation();
-  const [stack, setStack] = useState<Page[]>([{ page: 'game' }]);
+  const params = useLocalSearchParams<{ folderId?: string; game?: TCGGame }>();
+  const lockedFolderId = typeof params.folderId === 'string' ? params.folderId : null;
+  const initialGame = typeof params.game === 'string' ? (params.game as TCGGame) : null;
+  const [stack, setStack] = useState<Page[]>(
+    initialGame ? [{ page: 'method', game: initialGame }] : [{ page: 'game' }]
+  );
   const [saved, setSaved] = useState(false);
   const [saveCtx, setSaveCtx] = useState<SaveCtx | null>(null);
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
@@ -193,6 +198,7 @@ export default function AddCardScreen() {
   }, [user]);
 
   function pickFolder(): Promise<string | null> {
+    if (lockedFolderId) return Promise.resolve(lockedFolderId);
     if (folders.length === 0) return Promise.resolve(null);
     return new Promise(resolve => {
       folderResolveRef.current = resolve;
@@ -201,7 +207,7 @@ export default function AddCardScreen() {
   }
 
   const current = stack[stack.length - 1];
-  const inWizard = stack.length > 1;
+  const inWizard = stack.length > 1 || initialGame !== null;
 
   // Deshabilita el gesto nativo cuando estamos dentro del wizard.
   // usePreventRemove no es suficiente en native-stack porque el gesto

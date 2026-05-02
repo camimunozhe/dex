@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { consumeCollectionRefresh, requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
+import { requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
@@ -138,10 +138,12 @@ export default function CollectionScreen() {
   }, [fetchCards, fetchFolders, fetchFolderCounts]);
 
   const isFirstMount = useRef(true);
+  const needsRefresh = useRef(false);
 
   useFocusEffect(useCallback(() => {
-    if (isFirstMount.current || consumeCollectionRefresh()) {
+    if (isFirstMount.current || needsRefresh.current) {
       isFirstMount.current = false;
+      needsRefresh.current = false;
       setLoading(true);
       Promise.all([fetchFolders(), fetchCards(), fetchFolderCounts()]).finally(() => setLoading(false));
     }
@@ -155,6 +157,8 @@ export default function CollectionScreen() {
       } else if (event.type === 'remove') {
         setAllCards(prev => prev.filter(c => c.id !== event.cardId));
         setFolderedRows(prev => prev.filter(c => c.id !== event.cardId));
+      } else if (event.type === 'refresh') {
+        needsRefresh.current = true;
       }
     });
   }, []);

@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, RefreshControl,
   Dimensions, Modal, Alert, TextInput,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -83,10 +83,17 @@ export default function FolderDetailScreen() {
     setCards((data ?? []) as CardCollectionWithPrice[]);
   }, [user, id]);
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
-  }, [fetchFolder, fetchCards]);
+  const isFirstMount = useRef(true);
+  const needsRefresh = useRef(false);
+
+  useFocusEffect(useCallback(() => {
+    if (isFirstMount.current || needsRefresh.current) {
+      isFirstMount.current = false;
+      needsRefresh.current = false;
+      setLoading(true);
+      Promise.all([fetchFolder(), fetchCards()]).finally(() => setLoading(false));
+    }
+  }, [fetchFolder, fetchCards]));
 
   useEffect(() => {
     return subscribeCollection(event => {
@@ -94,6 +101,8 @@ export default function FolderDetailScreen() {
         setCards(prev => prev.map(c => c.id === event.cardId ? { ...c, ...event.patch } : c));
       } else if (event.type === 'remove') {
         setCards(prev => prev.filter(c => c.id !== event.cardId));
+      } else if (event.type === 'refresh') {
+        needsRefresh.current = true;
       }
     });
   }, []);
@@ -134,6 +143,22 @@ export default function FolderDetailScreen() {
     ]);
   }
 
+  function showAddOptions() {
+    const folderGame = cards[0]?.game ?? null;
+    Alert.alert('Agregar cartas', undefined, [
+      {
+        text: 'Buscar nueva carta',
+        onPress: () => {
+          const qs = new URLSearchParams({ folderId: String(id) });
+          if (folderGame) qs.set('game', folderGame);
+          router.push(`/(tabs)/collection/add?${qs.toString()}`);
+        },
+      },
+      { text: 'De mi colección', onPress: () => setShowPicker(true) },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
   async function deleteFolder() {
     Alert.alert('Eliminar carpeta', `¿Eliminar "${folder?.name}"? Las cartas quedarán sin carpeta.`, [
       { text: 'Cancelar', style: 'cancel' },
@@ -165,7 +190,7 @@ export default function FolderDetailScreen() {
           <Text style={styles.title} numberOfLines={1}>{folder.name}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.headerIconBtn} hitSlop={8}>
+          <TouchableOpacity onPress={showAddOptions} style={styles.headerIconBtn} hitSlop={8}>
             <Ionicons name="add" size={24} color="#6366F1" />
           </TouchableOpacity>
           <TouchableOpacity onPress={deleteFolder} style={styles.headerIconBtn} hitSlop={8}>

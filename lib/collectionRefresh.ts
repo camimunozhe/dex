@@ -1,33 +1,31 @@
 import type { CardCollection } from '@/types/database';
 
 type Event =
+  | { type: 'refresh' }
   | { type: 'patch'; cardId: string; patch: Partial<CardCollection> }
   | { type: 'remove'; cardId: string };
 
 type Listener = (event: Event) => void;
 
 const listeners = new Set<Listener>();
-let pendingFullRefresh = false;
 
 export function subscribeCollection(listener: Listener): () => void {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
 
-export function patchCollectionCard(cardId: string, patch: Partial<CardCollection>) {
-  listeners.forEach(l => l({ type: 'patch', cardId, patch }));
-}
-
-export function removeCollectionCard(cardId: string) {
-  listeners.forEach(l => l({ type: 'remove', cardId }));
+function emit(event: Event) {
+  listeners.forEach(l => l(event));
 }
 
 export function requestCollectionRefresh() {
-  pendingFullRefresh = true;
+  emit({ type: 'refresh' });
 }
 
-export function consumeCollectionRefresh(): boolean {
-  const v = pendingFullRefresh;
-  pendingFullRefresh = false;
-  return v;
+export function patchCollectionCard(cardId: string, patch: Partial<CardCollection>) {
+  emit({ type: 'patch', cardId, patch });
+}
+
+export function removeCollectionCard(cardId: string) {
+  emit({ type: 'remove', cardId });
 }
