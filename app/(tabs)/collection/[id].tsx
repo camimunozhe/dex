@@ -48,7 +48,7 @@ const CONDITIONS: { value: import('@/types/database').CardCondition; label: stri
 
 export default function CardDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   type CardWithPrice = CardCollection & {
@@ -153,7 +153,7 @@ export default function CardDetailScreen() {
     setShowFolderPicker(false);
   }
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />;
+  if (loading || authLoading) return <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />;
   if (!card) return null;
 
   const gameIcon = GAME_ICON[card.game];

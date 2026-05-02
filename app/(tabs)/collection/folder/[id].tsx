@@ -51,7 +51,7 @@ const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string }> = {
 
 export default function FolderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
 
@@ -129,7 +129,7 @@ export default function FolderDetailScreen() {
   const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
   const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
-  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
+  if (loading || authLoading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#6366F1" />;
   if (!folder) return null;
 
   return (

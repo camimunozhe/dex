@@ -57,7 +57,7 @@ const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string; image?: Ret
 type FolderForm = { mode: 'create' | 'rename'; id?: string; name: string; color: string };
 
 export default function CollectionScreen() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const [allCards, setAllCards] = useState<CardCollectionWithPrice[]>([]);
@@ -331,7 +331,7 @@ export default function CollectionScreen() {
         )}
       </View>
 
-      {loading ? (
+      {loading || authLoading ? (
         <ActivityIndicator style={{ flex: 1 }} color="#6366F1" />
       ) : (
         <FlatList
