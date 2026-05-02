@@ -15,6 +15,7 @@ import type { TCGGame, CardCondition, CardLanguage } from '@/types/database';
 import { getOrCreateDefaultFolder } from '@/lib/defaultFolders';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { formatPrice, currencyLabel } from '@/lib/currency';
+import { resolveEnabledGames } from '@/lib/enabledGames';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -181,9 +182,13 @@ export default function AddCardScreen() {
   const params = useLocalSearchParams<{ folderId?: string; game?: TCGGame }>();
   const lockedFolderId = typeof params.folderId === 'string' ? params.folderId : null;
   const initialGame = typeof params.game === 'string' ? (params.game as TCGGame) : null;
-  const [stack, setStack] = useState<Page[]>(
-    initialGame ? [{ page: 'method', game: initialGame }] : [{ page: 'game' }]
-  );
+  const enabledGames = resolveEnabledGames(profile?.enabled_games);
+  const initialPage: Page = initialGame
+    ? { page: 'method', game: initialGame }
+    : enabledGames.length === 1
+    ? { page: 'method', game: enabledGames[0] }
+    : { page: 'game' };
+  const [stack, setStack] = useState<Page[]>([initialPage]);
   const [saved, setSaved] = useState(false);
   const [saveCtx, setSaveCtx] = useState<SaveCtx | null>(null);
   const [usdToClp, setUsdToClp] = useState(950);
@@ -261,7 +266,7 @@ export default function AddCardScreen() {
       </View>
 
       {current.page === 'game' && (
-        <GameStep onSelect={(g) => push({ page: 'method', game: g })} />
+        <GameStep enabledGames={enabledGames} onSelect={(g) => push({ page: 'method', game: g })} />
       )}
       {current.page === 'method' && (
         <MethodStep
@@ -310,11 +315,12 @@ export default function AddCardScreen() {
 
 // ─── Step: Game ───────────────────────────────────────────────────────────────
 
-function GameStep({ onSelect }: { onSelect: (g: TCGGame) => void }) {
+function GameStep({ onSelect, enabledGames }: { onSelect: (g: TCGGame) => void; enabledGames: TCGGame[] }) {
+  const visible = GAMES.filter(g => enabledGames.includes(g.value));
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad}>
       <Text style={styles.hint}>¿Qué juego quieres agregar?</Text>
-      {GAMES.map((g) => (
+      {visible.map((g) => (
         <TouchableOpacity key={g.value} style={styles.bigCard} onPress={() => onSelect(g.value)}>
           <View style={[styles.bigCardIcon, { backgroundColor: g.image ? '#fff' : g.color + '1A' }]}>
             {g.image

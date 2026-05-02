@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, TCGGame } from '@/types/database';
 import { availabilityBorder } from '@/lib/cardStyle';
+import { resolveEnabledGames } from '@/lib/enabledGames';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -55,7 +56,7 @@ type ExploreCard = CardCollection & {
 };
 
 export default function ExploreScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const [allCards, setAllCards] = useState<ExploreCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,16 +92,18 @@ export default function ExploreScreen() {
     }
   }, [fetchCards]));
 
-  const uniqueGames = useMemo(() => new Set(allCards.map(c => c.game as TCGGame)), [allCards]);
+  const enabledGamesSet = useMemo(() => new Set(resolveEnabledGames(profile?.enabled_games)), [profile?.enabled_games]);
+  const visibleAllCards = useMemo(() => allCards.filter(c => enabledGamesSet.has(c.game as TCGGame)), [allCards, enabledGamesSet]);
+  const uniqueGames = useMemo(() => new Set(visibleAllCards.map(c => c.game as TCGGame)), [visibleAllCards]);
 
   const cards = useMemo(() => {
-    let result = allCards;
+    let result = visibleAllCards;
     if (filterGame !== 'all') result = result.filter(c => c.game === filterGame);
     if (filterType === 'trade') result = result.filter(c => c.is_for_trade);
     if (filterType === 'sale') result = result.filter(c => c.is_for_sale);
     if (search.trim()) result = result.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()));
     return result;
-  }, [allCards, filterGame, filterType, search]);
+  }, [visibleAllCards, filterGame, filterType, search]);
 
   return (
     <SafeAreaView style={styles.container}>

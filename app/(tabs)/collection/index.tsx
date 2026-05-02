@@ -16,6 +16,7 @@ import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency'
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { availabilityBorder } from '@/lib/cardStyle';
+import { resolveEnabledGames } from '@/lib/enabledGames';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -95,8 +96,15 @@ export default function CollectionScreen() {
     setAllUserCards((data ?? []) as CardCollectionWithPrice[]);
   }, [user]);
 
-  const allCards = useMemo(() => allUserCards.filter(c => c.folder_id === null), [allUserCards]);
-  const folderedRows = useMemo(() => allUserCards.filter(c => c.folder_id !== null), [allUserCards]);
+  const enabledGamesSet = useMemo(() => new Set(resolveEnabledGames(profile?.enabled_games)), [profile?.enabled_games]);
+  const visibleUserCards = useMemo(() => allUserCards.filter(c => enabledGamesSet.has(c.game)), [allUserCards, enabledGamesSet]);
+  const allCards = useMemo(() => visibleUserCards.filter(c => c.folder_id === null), [visibleUserCards]);
+  const folderedRows = useMemo(() => visibleUserCards.filter(c => c.folder_id !== null), [visibleUserCards]);
+  const visibleFolderIds = useMemo(() => new Set(folderedRows.map(c => c.folder_id!)), [folderedRows]);
+  const visibleFolders = useMemo(() => folders.filter(f => {
+    if (f.is_default && f.game) return enabledGamesSet.has(f.game);
+    return visibleFolderIds.has(f.id);
+  }), [folders, enabledGamesSet, visibleFolderIds]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -318,7 +326,7 @@ export default function CollectionScreen() {
     ]);
   }
 
-  const totalCards = allUserCards.reduce((sum, c) => sum + c.quantity, 0);
+  const totalCards = visibleUserCards.reduce((sum, c) => sum + c.quantity, 0);
   const unfolderedValue = allCards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
   const folderedValue = Object.values(folderValues).reduce((a, b) => a + b, 0);
   const totalValue = unfolderedValue + folderedValue;
@@ -368,7 +376,7 @@ export default function CollectionScreen() {
             <CollectionHeader
               search={search}
               onSearchChange={setSearch}
-              folders={folders}
+              folders={visibleFolders}
               folderCounts={folderCounts}
               folderValues={folderValues}
               folderForm={folderForm}
@@ -477,7 +485,7 @@ export default function CollectionScreen() {
       <FolderPickerModal
         visible={!!folderPickerCard}
         card={folderPickerCard}
-        folders={folders}
+        folders={visibleFolders}
         onSelect={(folderId) => folderPickerCard && assignFolder(folderPickerCard.id, folderId)}
         onClose={() => setFolderPickerCard(null)}
       />
@@ -486,7 +494,7 @@ export default function CollectionScreen() {
         visible={bulkFolderOpen}
         card={null}
         bulkCount={selectedCards.size}
-        folders={folders}
+        folders={visibleFolders}
         onSelect={bulkAssignFolder}
         onClose={() => setBulkFolderOpen(false)}
       />

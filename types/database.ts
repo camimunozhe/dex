@@ -69,6 +69,7 @@ export interface Profile {
   verification_status: 'pending' | 'approved' | 'rejected' | null;
   collection_public: boolean;
   currency: Currency;
+  enabled_games: TCGGame[];
   emergency_contacts: string[] | null;
   created_at: string;
   updated_at: string;
