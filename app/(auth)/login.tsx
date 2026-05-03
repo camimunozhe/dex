@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Link } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
@@ -30,7 +29,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Ionicons name="shield-checkmark" size={64} color="#6366F1" style={styles.shield} />
+          <Image source={require('../../assets/icon.png')} style={styles.logo} />
           <Text style={styles.title}>Trocora</Text>
           <Text style={styles.subtitle}>Encuentra tu comunidad con seguridad</Text>
         </View>
@@ -82,7 +81,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   inner: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 40 },
-  shield: { marginBottom: 12 },
+  logo: { width: 80, height: 80, borderRadius: 18, marginBottom: 12 },
   title: { fontSize: 32, fontWeight: '800', color: '#F1F5F9', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: '#94A3B8', marginTop: 6, textAlign: 'center' },
   form: { gap: 4 },
