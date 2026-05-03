@@ -126,7 +126,14 @@ export default function CardDetailScreen() {
         onPress: async () => {
           await supabase.from('cards_collection').delete().eq('id', id);
           removeCollectionCard(id);
-          router.back();
+          const folderId = card?.folder_id;
+          if (router.canGoBack()) {
+            router.back();
+          } else if (folderId) {
+            router.replace(`/(tabs)/collection/folder/${folderId}`);
+          } else {
+            router.replace('/(tabs)/collection');
+          }
         },
       },
     ]);
