@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Trocora",
-    "slug": "trocora",
+    "slug": "tcg-safe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
