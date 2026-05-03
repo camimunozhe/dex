@@ -30,7 +30,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Image source={require('../../assets/icon.png')} style={styles.logo} />
-          <Text style={styles.title}>TCG Safe</Text>
+          <Text style={styles.title}>Trocora</Text>
           <Text style={styles.subtitle}>Encuentra tu comunidad con seguridad</Text>
         </View>
 
