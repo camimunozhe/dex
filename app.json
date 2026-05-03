@@ -45,6 +45,14 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Para sugerir zonas seguras cercanas"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": false,
+          "microphonePermission": false,
+          "photosPermission": "Para subir fotos de cartas y avatar"
+        }
       ]
     ],
     "extra": {
