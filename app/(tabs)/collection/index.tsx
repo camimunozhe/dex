@@ -364,19 +364,24 @@ export default function CollectionScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>
-            {selectionMode
-              ? `${selectedCards.size} seleccionada${selectedCards.size !== 1 ? 's' : ''}`
-              : 'Mi Colección'}
-          </Text>
+        <View style={styles.headerLeft}>
           {!selectionMode && (
-            <Text style={styles.subtitle}>
-              {totalCards} cartas{totalValue > 0 ? (
-                <>{'  ·  '}<Text style={{ color: '#4ADE80' }}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
-              ) : ''}
-            </Text>
+            <Image source={require('../../../assets/icon.png')} style={styles.headerLogo} />
           )}
+          <View>
+            <Text style={styles.title}>
+              {selectionMode
+                ? `${selectedCards.size} seleccionada${selectedCards.size !== 1 ? 's' : ''}`
+                : 'Mi Colección'}
+            </Text>
+            {!selectionMode && (
+              <Text style={styles.subtitle}>
+                {totalCards} cartas{totalValue > 0 ? (
+                  <>{'  ·  '}<Text style={{ color: '#4ADE80' }}>{formatCurrencyValue(totalValue, currency)} {currencyLabel(currency)}</Text></>
+                ) : ''}
+              </Text>
+            )}
+          </View>
         </View>
         {selectionMode ? (
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
@@ -969,6 +974,8 @@ function EmptyCollection({ onAdd }: { onAdd: () => void }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 20, paddingTop: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  headerLogo: { width: 32, height: 32, borderRadius: 8 },
   title: { fontSize: 24, fontWeight: '800', color: '#F1F5F9' },
   subtitle: { fontSize: 13, color: '#64748B', marginTop: 2 },
   addBtn: { backgroundColor: '#6366F1', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
