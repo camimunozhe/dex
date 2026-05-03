@@ -135,17 +135,17 @@ async function upsertCollectionCards(rows: CardInsertRow[]): Promise<{ error: an
     const ids = batch.map(r => r[catalogKey]!);
     const { data: existing, error: selError } = await supabase
       .from('cards_collection')
-      .select(`id, ${catalogKey}, condition, is_foil, quantity`)
+      .select(`id, ${catalogKey}, condition, is_foil, language, folder_id, quantity`)
       .eq('user_id', batch[0].user_id)
       .in(catalogKey, ids);
     if (selError) return { toInsert: [], error: selError };
 
-    const existingMap = new Map(
-      (existing ?? []).map((e: any) => [`${e[catalogKey]}|${e.condition}|${e.is_foil}`, e])
-    );
+    const rowKey = (r: { [k: string]: any }) =>
+      `${r[catalogKey]}|${r.condition}|${r.is_foil}|${r.language ?? ''}|${r.folder_id ?? ''}`;
+    const existingMap = new Map((existing ?? []).map((e: any) => [rowKey(e), e]));
     const toInsert: CardInsertRow[] = [];
     for (const row of batch) {
-      const key = `${row[catalogKey]}|${row.condition}|${row.is_foil}`;
+      const key = rowKey(row);
       const match = existingMap.get(key) as { id: string; quantity: number } | undefined;
       if (match) {
         const { error } = await supabase
