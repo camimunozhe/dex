@@ -50,14 +50,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a7337c32-3d4f-4a05-a4fc-de0c3889c484"
+        "projectId": "960bb013-816a-4aa1-8559-16b7cdac6842"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/a7337c32-3d4f-4a05-a4fc-de0c3889c484"
-    }
+      "url": "https://u.expo.dev/960bb013-816a-4aa1-8559-16b7cdac6842"
+    },
+    "owner": "cami.munozhe"
   }
 }
