@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { subscribeCollection, removeCollectionCard } from '@/lib/collectionRefresh';
+import { subscribeCollection, removeCollectionCard, patchCollectionCard } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
@@ -270,6 +270,7 @@ export default function CollectionScreen() {
           await supabase.from('cards_collection').delete().eq('id', cardId);
           setAllUserCards(prev => prev.filter(c => c.id !== cardId));
           setCardActionCard(null);
+          removeCollectionCard(cardId);
         },
       },
     ]);
@@ -289,6 +290,7 @@ export default function CollectionScreen() {
     await supabase.from('cards_collection').update({ folder_id: folderId }).eq('id', cardId);
     setFolderPickerCard(null);
     setAllUserCards(prev => prev.map(c => c.id === cardId ? { ...c, folder_id: folderId } : c));
+    patchCollectionCard(cardId, { folder_id: folderId });
   }
 
   async function bulkAssignFolder(folderId: string | null) {

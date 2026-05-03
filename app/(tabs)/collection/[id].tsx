@@ -215,6 +215,7 @@ export default function CardDetailScreen() {
     }
     await supabase.from('cards_collection').update({ folder_id: folderId }).eq('id', id);
     setCard(c => c ? { ...c, folder_id: folderId } : c);
+    patchCollectionCard(id, { folder_id: folderId });
     setShowFolderPicker(false);
   }
 
