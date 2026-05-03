@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
   Alert, ScrollView, ActivityIndicator, Modal, FlatList,
@@ -10,10 +10,11 @@ import { requestCollectionRefresh, patchCollectionCard, removeCollectionCard } f
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
-import { formatPrice, currencyLabel } from '@/lib/currency';
+import type { CardCollection, CollectionFolder, TCGGame, CardLanguage } from '@/types/database';
+import { formatPrice, currencyLabel, convertCurrency } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
+import { marketPriceUsd, type CardWithCatalog } from '@/lib/cardPrice';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -46,23 +47,36 @@ const CONDITIONS: { value: import('@/types/database').CardCondition; label: stri
   { value: 'poor', label: 'Dañada' },
 ];
 
+const LANGUAGES: { value: CardLanguage; label: string }[] = [
+  { value: 'en', label: 'Inglés' },
+  { value: 'es', label: 'Español' },
+  { value: 'jp', label: 'Japonés' },
+  { value: 'pt', label: 'Portugués' },
+  { value: 'fr', label: 'Francés' },
+  { value: 'de', label: 'Alemán' },
+  { value: 'it', label: 'Italiano' },
+  { value: 'ko', label: 'Coreano' },
+  { value: 'other', label: 'Otro' },
+];
+
 export default function CardDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
-  type CardWithPrice = CardCollection & {
-    pokemon_cards?: { tcgplayer_normal_market: number | null; tcgplayer_foil_market: number | null } | null;
-  };
+  type CardWithPrice = CardWithCatalog;
   const [card, setCard] = useState<CardWithPrice | null>(null);
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [showConditionPicker, setShowConditionPicker] = useState(false);
+  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const [imageZoom, setImageZoom] = useState(false);
   const [priceInput, setPriceInput] = useState('');
   const [priceSaving, setPriceSaving] = useState(false);
   const [usdToClp, setUsdToClp] = useState<number | null>(null);
+  const qtySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qtyTargetRef = useRef<number | null>(null);
 
   const fetchFolders = useCallback(async () => {
     if (!user) return;
@@ -77,9 +91,9 @@ export default function CardDetailScreen() {
   useEffect(() => {
     Promise.all([
       supabase.from('cards_collection')
-        .select('*, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
+        .select('*, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market), magic_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
         .eq('id', id).single()
-        .then(({ data }) => setCard(data as CardWithPrice)),
+        .then(({ data }) => setCard(data as unknown as CardWithPrice)),
       fetchFolders(),
     ]).finally(() => setLoading(false));
   }, [id, fetchFolders]);
@@ -93,15 +107,16 @@ export default function CardDetailScreen() {
     return () => { mounted = false; };
   }, [currency]);
 
-  // Initialize price input — price_reference is stored in user's currency, no conversion needed
+  // Initialize price input — convert from the stored currency to the display currency
   useEffect(() => {
     if (!card) return;
     const val = card.price_reference;
     if (val == null) { setPriceInput(''); return; }
+    const displayVal = convertCurrency(val, card.price_reference_currency, currency, usdToClp ?? 950);
     setPriceInput(currency === 'clp'
-      ? String(Math.round(val))
-      : (val % 1 === 0 ? String(val) : val.toFixed(2)));
-  }, [card?.id, currency]);
+      ? String(Math.round(displayVal))
+      : (displayVal % 1 === 0 ? String(displayVal) : displayVal.toFixed(2)));
+  }, [card?.id, currency, usdToClp]);
 
   async function handleDelete() {
     Alert.alert('Eliminar carta', '¿Estás seguro?', [
@@ -127,9 +142,10 @@ export default function CardDetailScreen() {
     setPriceSaving(true);
     const inputNum = priceInput.trim() ? parseFloat(priceInput) : null;
     const storeVal = inputNum !== null && !isNaN(inputNum) ? inputNum : null;
-    await supabase.from('cards_collection').update({ price_reference: storeVal }).eq('id', id);
-    setCard(c => c ? { ...c, price_reference: storeVal } : c);
-    patchCollectionCard(id, { price_reference: storeVal });
+    const update = { price_reference: storeVal, price_reference_currency: currency };
+    await supabase.from('cards_collection').update(update).eq('id', id);
+    setCard(c => c ? { ...c, ...update } : c);
+    patchCollectionCard(id, update);
     setPriceSaving(false);
   }
 
@@ -148,6 +164,39 @@ export default function CardDetailScreen() {
     patchCollectionCard(id, { condition });
     setShowConditionPicker(false);
   }
+
+  async function saveLanguage(language: CardLanguage) {
+    await supabase.from('cards_collection').update({ language }).eq('id', id);
+    setCard(c => c ? { ...c, language } : c);
+    patchCollectionCard(id, { language });
+    setShowLanguagePicker(false);
+  }
+
+  async function toggleFoil(value: boolean) {
+    await supabase.from('cards_collection').update({ is_foil: value }).eq('id', id);
+    setCard(c => c ? { ...c, is_foil: value } : c);
+    patchCollectionCard(id, { is_foil: value });
+  }
+
+  // Optimistic +/- with debounced DB write so quick taps coalesce to one update.
+  function changeQty(delta: number) {
+    setCard(c => {
+      if (!c) return c;
+      const next = Math.max(1, c.quantity + delta);
+      if (next === c.quantity) return c;
+      qtyTargetRef.current = next;
+      if (qtySaveTimer.current) clearTimeout(qtySaveTimer.current);
+      qtySaveTimer.current = setTimeout(async () => {
+        const final = qtyTargetRef.current;
+        if (final == null) return;
+        patchCollectionCard(id, { quantity: final });
+        await supabase.from('cards_collection').update({ quantity: final }).eq('id', id);
+      }, 400);
+      return { ...c, quantity: next };
+    });
+  }
+
+  useEffect(() => () => { if (qtySaveTimer.current) clearTimeout(qtySaveTimer.current); }, []);
 
   async function assignFolder(folderId: string | null) {
     if (folderId && card) {
@@ -212,14 +261,34 @@ export default function CardDetailScreen() {
               <Ionicons name="chevron-forward-outline" size={14} color="#475569" />
             </View>
           </TouchableOpacity>
-          <DetailRow label="Cantidad" value={String(card.quantity)} />
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Cantidad</Text>
+            <View style={styles.qtyStepper}>
+              <TouchableOpacity
+                style={[styles.qtyBtn, card.quantity <= 1 && styles.qtyBtnDisabled]}
+                onPress={() => changeQty(-1)}
+                disabled={card.quantity <= 1}
+                hitSlop={6}
+              >
+                <Ionicons name="remove" size={18} color={card.quantity <= 1 ? '#475569' : '#F1F5F9'} />
+              </TouchableOpacity>
+              <Text style={styles.qtyValue}>{card.quantity}</Text>
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQty(1)} hitSlop={6}>
+                <Ionicons name="add" size={18} color="#F1F5F9" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.detailRow} onPress={() => setShowLanguagePicker(true)}>
+            <Text style={styles.detailLabel}>Idioma</Text>
+            <View style={styles.folderValue}>
+              <Text style={styles.detailValue}>
+                {LANGUAGES.find(l => l.value === card.language)?.label ?? '—'}
+              </Text>
+              <Ionicons name="chevron-forward-outline" size={14} color="#475569" />
+            </View>
+          </TouchableOpacity>
           {(() => {
-            const p = card.pokemon_cards;
-            const marketPrice = p
-              ? (card.is_foil
-                ? (p.tcgplayer_foil_market ?? p.tcgplayer_normal_market)
-                : (p.tcgplayer_normal_market ?? p.tcgplayer_foil_market))
-              : null;
+            const marketPrice = marketPriceUsd(card);
             return (
               <View style={styles.priceBlock}>
                 {marketPrice != null && (
@@ -285,6 +354,17 @@ export default function CardDetailScreen() {
         <View style={styles.switches}>
           <View style={styles.switchRow}>
             <View style={styles.switchLabelRow}>
+              <Ionicons name="star-outline" size={16} color="#93C5FD" />
+              <Text style={styles.switchLabel}>Foil / Holo</Text>
+            </View>
+            <Switch
+              value={card.is_foil}
+              onValueChange={toggleFoil}
+              trackColor={{ true: '#3B82F6' }}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabelRow}>
               <Ionicons name="swap-horizontal-outline" size={16} color="#3B82F6" />
               <Text style={styles.switchLabel}>Para intercambiar</Text>
             </View>
@@ -331,6 +411,30 @@ export default function CardDetailScreen() {
                 >
                   <Text style={styles.folderOptionText}>{item.label}</Text>
                   {card.condition === item.value && (
+                    <Ionicons name="checkmark-outline" size={18} color="#6366F1" />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={showLanguagePicker} transparent animationType="slide">
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowLanguagePicker(false)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Idioma</Text>
+            <FlatList
+              data={LANGUAGES}
+              keyExtractor={item => item.value}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.folderOption, card.language === item.value && styles.folderOptionActive]}
+                  onPress={() => saveLanguage(item.value)}
+                >
+                  <Text style={styles.folderOptionText}>{item.label}</Text>
+                  {card.language === item.value && (
                     <Ionicons name="checkmark-outline" size={18} color="#6366F1" />
                   )}
                 </TouchableOpacity>
@@ -449,6 +553,14 @@ const styles = StyleSheet.create({
   useMarketText: { color: '#6366F1', fontSize: 12, fontWeight: '600' },
   folderValue: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   folderDot: { width: 8, height: 8, borderRadius: 4 },
+  qtyStepper: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  qtyBtn: {
+    width: 32, height: 32, borderRadius: 8,
+    backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  qtyBtnDisabled: { opacity: 0.4 },
+  qtyValue: { color: '#F1F5F9', fontSize: 16, fontWeight: '700', minWidth: 24, textAlign: 'center' },
   switches: {
     marginHorizontal: 16, marginBottom: 16,
     backgroundColor: '#1E293B', borderRadius: 12, borderWidth: 1, borderColor: '#334155',

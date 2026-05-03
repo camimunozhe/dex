@@ -120,53 +120,60 @@ type CardInsertRow = {
   is_for_trade: boolean;
   is_for_sale: boolean;
   price_reference: number | null;
+  price_reference_currency: import('@/types/database').Currency;
   image_url: string | null;
   pokemon_card_id: string | null;
+  magic_card_id: string | null;
   folder_id: string | null;
 };
 
 async function upsertCollectionCards(rows: CardInsertRow[]): Promise<{ error: any }> {
-  const pokemonRows = rows.filter(r => r.pokemon_card_id);
-  const otherRows   = rows.filter(r => !r.pokemon_card_id);
+  type CatalogKey = 'pokemon_card_id' | 'magic_card_id';
 
-  if (pokemonRows.length > 0) {
-    const { data: existing } = await supabase
+  async function dedupeByCatalog(catalogKey: CatalogKey, batch: CardInsertRow[]) {
+    if (batch.length === 0) return { toInsert: [] as CardInsertRow[], error: null as any };
+    const ids = batch.map(r => r[catalogKey]!);
+    const { data: existing, error: selError } = await supabase
       .from('cards_collection')
-      .select('id, pokemon_card_id, condition, is_foil, quantity')
-      .eq('user_id', pokemonRows[0].user_id)
-      .in('pokemon_card_id', pokemonRows.map(r => r.pokemon_card_id!));
+      .select(`id, ${catalogKey}, condition, is_foil, quantity`)
+      .eq('user_id', batch[0].user_id)
+      .in(catalogKey, ids);
+    if (selError) return { toInsert: [], error: selError };
 
     const existingMap = new Map(
-      (existing ?? []).map(e => [`${e.pokemon_card_id}|${e.condition}|${e.is_foil}`, e])
+      (existing ?? []).map((e: any) => [`${e[catalogKey]}|${e.condition}|${e.is_foil}`, e])
     );
-
     const toInsert: CardInsertRow[] = [];
-
-    for (const row of pokemonRows) {
-      const key   = `${row.pokemon_card_id}|${row.condition}|${row.is_foil}`;
-      const match = existingMap.get(key);
+    for (const row of batch) {
+      const key = `${row[catalogKey]}|${row.condition}|${row.is_foil}`;
+      const match = existingMap.get(key) as { id: string; quantity: number } | undefined;
       if (match) {
         const { error } = await supabase
           .from('cards_collection')
           .update({ quantity: match.quantity + row.quantity })
           .eq('id', match.id);
-        if (error) return { error };
+        if (error) return { toInsert: [], error };
       } else {
         toInsert.push(row);
       }
     }
-
-    if (toInsert.length > 0) {
-      const { error } = await supabase.from('cards_collection').insert(toInsert);
-      if (error) return { error };
-    }
+    return { toInsert, error: null };
   }
 
-  if (otherRows.length > 0) {
-    const { error } = await supabase.from('cards_collection').insert(otherRows);
+  const pokemonRows = rows.filter(r => r.pokemon_card_id);
+  const magicRows   = rows.filter(r => r.magic_card_id);
+  const otherRows   = rows.filter(r => !r.pokemon_card_id && !r.magic_card_id);
+
+  const pkmRes = await dedupeByCatalog('pokemon_card_id', pokemonRows);
+  if (pkmRes.error) return { error: pkmRes.error };
+  const mtgRes = await dedupeByCatalog('magic_card_id', magicRows);
+  if (mtgRes.error) return { error: mtgRes.error };
+
+  const toInsert = [...pkmRes.toInsert, ...mtgRes.toInsert, ...otherRows];
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('cards_collection').insert(toInsert);
     if (error) return { error };
   }
-
   return { error: null };
 }
 
@@ -606,8 +613,10 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
       is_for_trade: false,
       is_for_sale: false,
       price_reference: null,
+      price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
       pokemon_card_id: game === 'pokemon' ? card.id : null,
+      magic_card_id: game === 'magic' ? card.id : null,
       folder_id: folderId,
     }));
     const { error } = await upsertCollectionCards(rows);
@@ -770,11 +779,13 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
       is_for_trade: false,
       is_for_sale: false,
       price_reference: null,
+      price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
       pokemon_card_id: game === 'pokemon' ? card.id : null,
+      magic_card_id: game === 'magic' ? card.id : null,
       folder_id: folderId,
     }));
-    const { error } = await supabase.from('cards_collection').insert(rows);
+    const { error } = await upsertCollectionCards(rows);
     setSaving(false);
     if (error) Alert.alert('Error', error.message);
     else onSave();
@@ -912,8 +923,10 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
       is_for_trade: isAvailable,
       is_for_sale: false,
       price_reference: price ? parseFloat(price) : null,
+      price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
-      pokemon_card_id: card.id,
+      pokemon_card_id: game === 'pokemon' ? card.id : null,
+      magic_card_id: game === 'magic' ? card.id : null,
       folder_id: folderId,
     }]);
     setSaving(false);

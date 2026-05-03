@@ -19,3 +19,11 @@ export function formatCurrencyValue(value: number, currency: Currency): string {
 export function currencyLabel(currency: Currency): string {
   return currency === 'clp' ? 'CLP' : 'USD';
 }
+
+// Converts an amount stored in `from` currency to the `to` currency.
+export function convertCurrency(value: number, from: Currency, to: Currency, usdToClp: number): number {
+  if (from === to) return value;
+  if (from === 'usd' && to === 'clp') return value * usdToClp;
+  if (from === 'clp' && to === 'usd') return value / usdToClp;
+  return value;
+}

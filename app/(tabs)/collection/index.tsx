@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { subscribeCollection } from '@/lib/collectionRefresh';
+import { subscribeCollection, removeCollectionCard } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
@@ -14,33 +14,17 @@ import { useAuth } from '@/context/AuthContext';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
+import { reassignFolderCardsToDefault } from '@/lib/defaultFolders';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { availabilityBorder } from '@/lib/cardStyle';
 import { resolveEnabledGames } from '@/lib/enabledGames';
+import { effectivePrice, COLLECTION_CARD_SELECT, type CardWithCatalog } from '@/lib/cardPrice';
+import { FolderIcon } from '@/lib/folderIcon';
+import { UndoSnackbar } from '@/lib/UndoSnackbar';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-type CardCollectionWithPrice = CardCollection & {
-  pokemon_cards?: { tcgplayer_normal_market: number | null; tcgplayer_foil_market: number | null } | null;
-};
-
-// Returns a value in the user's display currency.
-// price_reference is stored as-is in user's currency; market prices are USD and need conversion.
-function effectivePrice(
-  card: CardCollectionWithPrice,
-  currency: import('@/types/database').Currency,
-  usdToClp: number,
-): number {
-  if (card.price_reference != null) return card.price_reference;
-  if (card.pokemon_cards) {
-    const p = card.pokemon_cards;
-    const usd = card.is_foil
-      ? p.tcgplayer_foil_market ?? p.tcgplayer_normal_market ?? 0
-      : p.tcgplayer_normal_market ?? p.tcgplayer_foil_market ?? 0;
-    return currency === 'clp' ? usd * usdToClp : usd;
-  }
-  return 0;
-}
+type CardCollectionWithPrice = CardWithCatalog;
 
 const CARD_WIDTH = (Dimensions.get('window').width - 48) / 3;
 const FOLDER_TILE_WIDTH = (Dimensions.get('window').width - 32 - 10) / 2; // 16px lateral padding, 10px gap entre columnas
@@ -77,6 +61,9 @@ export default function CollectionScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [usdToClp, setUsdToClp] = useState(950);
   const [rateReady, setRateReady] = useState(currency !== 'clp');
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const pendingDeleteRef = useRef<Set<string>>(new Set());
+  const pendingDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchFolders = useCallback(async () => {
     if (!user) return;
@@ -90,21 +77,24 @@ export default function CollectionScreen() {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
-      .select('id, game, card_name, set_name, card_number, quantity, is_foil, is_for_trade, is_for_sale, price_reference, image_url, folder_id, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
+      .select(COLLECTION_CARD_SELECT)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
-    setAllUserCards((data ?? []) as CardCollectionWithPrice[]);
+    setAllUserCards((data ?? []) as unknown as CardCollectionWithPrice[]);
   }, [user]);
 
   const enabledGamesSet = useMemo(() => new Set(resolveEnabledGames(profile?.enabled_games)), [profile?.enabled_games]);
-  const visibleUserCards = useMemo(() => allUserCards.filter(c => enabledGamesSet.has(c.game)), [allUserCards, enabledGamesSet]);
+  const visibleUserCards = useMemo(
+    () => allUserCards.filter(c => !pendingDeleteIds.has(c.id) && enabledGamesSet.has(c.game)),
+    [allUserCards, enabledGamesSet, pendingDeleteIds],
+  );
   const allCards = useMemo(() => visibleUserCards.filter(c => c.folder_id === null), [visibleUserCards]);
   const folderedRows = useMemo(() => visibleUserCards.filter(c => c.folder_id !== null), [visibleUserCards]);
   // Derive each folder's effective game from any card it has (custom folders) using the unfiltered set,
   // so a folder full of cards from a disabled game is still detected as belonging to that game.
   const folderGameMap = useMemo(() => {
     const map: Record<string, TCGGame | null> = {};
-    for (const f of folders) map[f.id] = null;
+    for (const f of folders) map[f.id] = f.is_default ? (f.game ?? null) : null;
     for (const c of allUserCards) {
       if (c.folder_id && map[c.folder_id] == null) map[c.folder_id] = c.game;
     }
@@ -211,11 +201,16 @@ export default function CollectionScreen() {
       Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
       return;
     }
-    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder.name}"? Las cartas quedarán sin carpeta.`, [
+    const folderGame = folderGameMap[folder.id];
+    const destinationLabel = folderGame && folderGame !== 'other'
+      ? `Las cartas se moverán a tu carpeta default de ${gameLabel(folderGame)}.`
+      : 'Las cartas quedarán sin carpeta.';
+    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder.name}"? ${destinationLabel}`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
+          if (user) await reassignFolderCardsToDefault(user.id, folder.id);
           await supabase.from('collection_folders').delete().eq('id', folder.id);
           fetchFolders(); fetchAllCards();
         },
@@ -312,7 +307,7 @@ export default function CollectionScreen() {
     exitSelectionMode();
   }
 
-  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale') {
+  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale' | 'is_foil') {
     const ids = Array.from(selectedCards);
     const selectedList = allCards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
@@ -321,21 +316,45 @@ export default function CollectionScreen() {
     exitSelectionMode();
   }
 
-  async function bulkDelete() {
-    const count = selectedCards.size;
-    Alert.alert(`Eliminar ${count} carta${count !== 1 ? 's' : ''}`, '¿Estás seguro? Esta acción no se puede deshacer.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          const ids = Array.from(selectedCards);
-          await supabase.from('cards_collection').delete().in('id', ids);
-          setAllUserCards(prev => prev.filter(c => !ids.includes(c.id)));
-          exitSelectionMode();
-        },
-      },
-    ]);
+  async function commitPendingDelete() {
+    if (pendingDeleteTimer.current) { clearTimeout(pendingDeleteTimer.current); pendingDeleteTimer.current = null; }
+    const ids = Array.from(pendingDeleteRef.current);
+    if (ids.length === 0) return;
+    pendingDeleteRef.current = new Set();
+    setPendingDeleteIds(new Set());
+    setAllUserCards(prev => prev.filter(c => !ids.includes(c.id)));
+    await supabase.from('cards_collection').delete().in('id', ids);
+    ids.forEach(cardId => removeCollectionCard(cardId));
   }
+
+  function undoPendingDelete() {
+    if (pendingDeleteTimer.current) { clearTimeout(pendingDeleteTimer.current); pendingDeleteTimer.current = null; }
+    pendingDeleteRef.current = new Set();
+    setPendingDeleteIds(new Set());
+  }
+
+  function bulkDelete() {
+    const ids = Array.from(selectedCards);
+    if (ids.length === 0) return;
+    // Commit any previous pending delete before scheduling a new one.
+    commitPendingDelete();
+    const next = new Set(ids);
+    pendingDeleteRef.current = next;
+    setPendingDeleteIds(next);
+    exitSelectionMode();
+    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+    pendingDeleteTimer.current = setTimeout(() => { commitPendingDelete(); }, 5000);
+  }
+
+  // Commit on unmount so soft-deleted cards aren't left dangling in the DB on app close.
+  useEffect(() => () => {
+    if (pendingDeleteRef.current.size > 0) {
+      const ids = Array.from(pendingDeleteRef.current);
+      supabase.from('cards_collection').delete().in('id', ids);
+      ids.forEach(cardId => removeCollectionCard(cardId));
+    }
+    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+  }, []);
 
   const totalCards = visibleUserCards.reduce((sum, c) => sum + c.quantity, 0);
   const unfolderedValue = allCards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
@@ -390,6 +409,7 @@ export default function CollectionScreen() {
               folders={visibleFolders}
               folderCounts={folderCounts}
               folderValues={folderValues}
+              folderGameMap={folderGameMap}
               folderForm={folderForm}
               setFolderForm={setFolderForm}
               saveFolderForm={saveFolderForm}
@@ -436,6 +456,14 @@ export default function CollectionScreen() {
           >
             <Ionicons name="folder-outline" size={20} color={selectedCards.size > 0 ? '#F1F5F9' : '#475569'} />
             <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Carpeta</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={() => bulkToggleField('is_foil')}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="star-outline" size={20} color={selectedCards.size > 0 ? '#93C5FD' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Foil</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
@@ -497,6 +525,7 @@ export default function CollectionScreen() {
         visible={!!folderPickerCard}
         card={folderPickerCard}
         folders={visibleFolders}
+        folderGameMap={folderGameMap}
         onSelect={(folderId) => folderPickerCard && assignFolder(folderPickerCard.id, folderId)}
         onClose={() => setFolderPickerCard(null)}
       />
@@ -506,6 +535,7 @@ export default function CollectionScreen() {
         card={null}
         bulkCount={selectedCards.size}
         folders={visibleFolders}
+        folderGameMap={folderGameMap}
         onSelect={bulkAssignFolder}
         onClose={() => setBulkFolderOpen(false)}
       />
@@ -513,6 +543,7 @@ export default function CollectionScreen() {
       <FolderActionModal
         visible={!!folderActionFolder}
         folder={folderActionFolder}
+        folderGame={folderActionFolder ? folderGameMap[folderActionFolder.id] ?? null : null}
         folderCount={folderActionFolder ? (folderCounts[folderActionFolder.id] ?? 0) : 0}
         onClose={() => setFolderActionFolder(null)}
         onRename={() => {
@@ -521,6 +552,12 @@ export default function CollectionScreen() {
           setFolderForm({ mode: 'rename', id: f.id, name: f.name, color: f.color });
         }}
         onDelete={() => folderActionFolder && deleteFolderConfirmed(folderActionFolder)}
+      />
+
+      <UndoSnackbar
+        visible={pendingDeleteIds.size > 0}
+        message={`${pendingDeleteIds.size} carta${pendingDeleteIds.size !== 1 ? 's' : ''} eliminada${pendingDeleteIds.size !== 1 ? 's' : ''}`}
+        onUndo={undoPendingDelete}
       />
     </SafeAreaView>
   );
@@ -628,10 +665,11 @@ function CardActionModal({
 // ─── Folder action modal ─────────────────────────────────────────────────────
 
 function FolderActionModal({
-  visible, folder, folderCount, onClose, onRename, onDelete,
+  visible, folder, folderGame, folderCount, onClose, onRename, onDelete,
 }: {
   visible: boolean;
   folder: CollectionFolder | null;
+  folderGame: TCGGame | null;
   folderCount: number;
   onClose: () => void;
   onRename: () => void;
@@ -644,9 +682,7 @@ function FolderActionModal({
         <View style={styles.modalSheet}>
           <View style={styles.modalHandle} />
           <View style={styles.actionCardHeader}>
-            <View style={[styles.folderActionIcon, { backgroundColor: folder.color + '22' }]}>
-              <Ionicons name="folder" size={32} color={folder.color} />
-            </View>
+            <FolderIcon game={folderGame} color={folder.color} boxSize={54} iconSize={32} borderRadius={12} />
             <View style={{ flex: 1, justifyContent: 'center' }}>
               <Text style={styles.actionCardName} numberOfLines={1}>{folder.name}</Text>
               <Text style={styles.actionCardSub}>{folderCount} carta{folderCount !== 1 ? 's' : ''}</Text>
@@ -678,7 +714,7 @@ function FolderActionModal({
 // ─── Collection header (scrolls with list) ───────────────────────────────────
 
 function CollectionHeader({
-  search, onSearchChange, folders, folderCounts, folderValues, folderForm, setFolderForm,
+  search, onSearchChange, folders, folderCounts, folderValues, folderGameMap, folderForm, setFolderForm,
   saveFolderForm, handleFolderLongPress, uniqueGames, filterGame, setFilterGame, currency, usdToClp, onFolderPress,
 }: {
   search: string;
@@ -686,6 +722,7 @@ function CollectionHeader({
   folders: CollectionFolder[];
   folderCounts: Record<string, number>;
   folderValues: Record<string, number>;
+  folderGameMap: Record<string, TCGGame | null>;
   folderForm: FolderForm | null;
   setFolderForm: (f: FolderForm | null) => void;
   saveFolderForm: () => void;
@@ -765,9 +802,7 @@ function CollectionHeader({
                 onLongPress={() => handleFolderLongPress(f)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.folderTileIconWrap, { backgroundColor: f.color + '22' }]}>
-                  <Ionicons name="folder" size={24} color={f.color} />
-                </View>
+                <FolderIcon game={folderGameMap[f.id] ?? null} color={f.color} boxSize={40} iconSize={24} borderRadius={10} />
                 <View style={styles.folderTileInfo}>
                   <Text style={styles.folderTileName} numberOfLines={1}>{f.name}</Text>
                   <Text style={styles.folderTileCount}>{folderCounts[f.id] ?? 0} cartas</Text>
@@ -813,12 +848,13 @@ function CollectionHeader({
 // ─── Folder picker modal ──────────────────────────────────────────────────────
 
 function FolderPickerModal({
-  visible, card, bulkCount, folders, onSelect, onClose,
+  visible, card, bulkCount, folders, folderGameMap, onSelect, onClose,
 }: {
   visible: boolean;
   card: CardCollection | null;
   bulkCount?: number;
   folders: CollectionFolder[];
+  folderGameMap: Record<string, TCGGame | null>;
   onSelect: (folderId: string | null) => void;
   onClose: () => void;
 }) {
@@ -845,9 +881,7 @@ function FolderPickerModal({
               style={[styles.folderRow, !isBulk && card?.folder_id === f.id && styles.folderRowActive]}
               onPress={() => onSelect(f.id)}
             >
-              <View style={[styles.folderRowIcon, { backgroundColor: f.color + '33' }]}>
-                <Ionicons name="folder" size={20} color={f.color} />
-              </View>
+              <FolderIcon game={folderGameMap[f.id] ?? null} color={f.color} boxSize={36} iconSize={20} borderRadius={8} />
               <Text style={styles.folderRowName}>{f.name}</Text>
               {!isBulk && card?.folder_id === f.id && (
                 <Ionicons name="checkmark" size={18} color="#6366F1" style={{ marginLeft: 'auto' }} />

@@ -88,6 +88,7 @@ export interface CardCollection {
   is_for_trade: boolean;
   is_for_sale: boolean;
   price_reference: number | null;
+  price_reference_currency: Currency;
   notes: string | null;
   image_url: string | null;
   language: CardLanguage | null;

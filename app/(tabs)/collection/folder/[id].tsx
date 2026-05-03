@@ -15,28 +15,14 @@ import { getUsdToClp } from '@/lib/exchangeRate';
 import { availabilityBorder } from '@/lib/cardStyle';
 import { patchCollectionCard, removeCollectionCard, requestCollectionRefresh, subscribeCollection } from '@/lib/collectionRefresh';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
+import { reassignFolderCardsToDefault } from '@/lib/defaultFolders';
+import { effectivePrice, COLLECTION_CARD_SELECT, type CardWithCatalog } from '@/lib/cardPrice';
+import { FolderIcon } from '@/lib/folderIcon';
+import { UndoSnackbar } from '@/lib/UndoSnackbar';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-type CardCollectionWithPrice = CardCollection & {
-  pokemon_cards?: { tcgplayer_normal_market: number | null; tcgplayer_foil_market: number | null } | null;
-};
-
-function effectivePrice(
-  card: CardCollectionWithPrice,
-  currency: import('@/types/database').Currency,
-  usdToClp: number,
-): number {
-  if (card.price_reference != null) return card.price_reference;
-  if (card.pokemon_cards) {
-    const p = card.pokemon_cards;
-    const usd = card.is_foil
-      ? p.tcgplayer_foil_market ?? p.tcgplayer_normal_market ?? 0
-      : p.tcgplayer_normal_market ?? p.tcgplayer_foil_market ?? 0;
-    return currency === 'clp' ? usd * usdToClp : usd;
-  }
-  return 0;
-}
+type CardCollectionWithPrice = CardWithCatalog;
 
 const CARD_WIDTH = (Dimensions.get('window').width - 16 - 24) / 3;
 
@@ -70,6 +56,9 @@ export default function FolderDetailScreen() {
   const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
   const [sortBy, setSortBy] = useState<'number' | 'name' | 'value'>('number');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const pendingDeleteRef = useRef<Set<string>>(new Set());
+  const pendingDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function toggleSort(key: 'number' | 'name' | 'value') {
     if (sortBy === key) {
@@ -93,11 +82,11 @@ export default function FolderDetailScreen() {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
-      .select('id, game, card_name, set_name, card_number, quantity, is_foil, is_for_trade, is_for_sale, price_reference, image_url, folder_id, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market)')
+      .select(COLLECTION_CARD_SELECT)
       .eq('user_id', user.id)
       .eq('folder_id', id)
       .order('created_at', { ascending: false });
-    setCards((data ?? []) as CardCollectionWithPrice[]);
+    setCards((data ?? []) as unknown as CardCollectionWithPrice[]);
   }, [user, id]);
 
   const fetchAllFolders = useCallback(async () => {
@@ -221,7 +210,7 @@ export default function FolderDetailScreen() {
     exitSelectionMode();
   }
 
-  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale') {
+  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale' | 'is_foil') {
     const ids = Array.from(selectedCards);
     const selectedList = cards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
@@ -231,22 +220,43 @@ export default function FolderDetailScreen() {
     exitSelectionMode();
   }
 
-  function bulkDelete() {
-    const count = selectedCards.size;
-    Alert.alert(`Eliminar ${count} carta${count !== 1 ? 's' : ''}`, '¿Estás seguro? Esta acción no se puede deshacer.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          const ids = Array.from(selectedCards);
-          await supabase.from('cards_collection').delete().in('id', ids);
-          setCards(prev => prev.filter(c => !ids.includes(c.id)));
-          ids.forEach(cardId => removeCollectionCard(cardId));
-          exitSelectionMode();
-        },
-      },
-    ]);
+  async function commitPendingDelete() {
+    if (pendingDeleteTimer.current) { clearTimeout(pendingDeleteTimer.current); pendingDeleteTimer.current = null; }
+    const ids = Array.from(pendingDeleteRef.current);
+    if (ids.length === 0) return;
+    pendingDeleteRef.current = new Set();
+    setPendingDeleteIds(new Set());
+    setCards(prev => prev.filter(c => !ids.includes(c.id)));
+    await supabase.from('cards_collection').delete().in('id', ids);
+    ids.forEach(cardId => removeCollectionCard(cardId));
   }
+
+  function undoPendingDelete() {
+    if (pendingDeleteTimer.current) { clearTimeout(pendingDeleteTimer.current); pendingDeleteTimer.current = null; }
+    pendingDeleteRef.current = new Set();
+    setPendingDeleteIds(new Set());
+  }
+
+  function bulkDelete() {
+    const ids = Array.from(selectedCards);
+    if (ids.length === 0) return;
+    commitPendingDelete();
+    const next = new Set(ids);
+    pendingDeleteRef.current = next;
+    setPendingDeleteIds(next);
+    exitSelectionMode();
+    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+    pendingDeleteTimer.current = setTimeout(() => { commitPendingDelete(); }, 5000);
+  }
+
+  useEffect(() => () => {
+    if (pendingDeleteRef.current.size > 0) {
+      const ids = Array.from(pendingDeleteRef.current);
+      supabase.from('cards_collection').delete().in('id', ids);
+      ids.forEach(cardId => removeCollectionCard(cardId));
+    }
+    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+  }, []);
 
   function openSearchNewCard() {
     setShowAddSheet(false);
@@ -266,11 +276,16 @@ export default function FolderDetailScreen() {
       Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
       return;
     }
-    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder?.name}"? Las cartas quedarán sin carpeta.`, [
+    const folderGame = (cards[0]?.game ?? null) as TCGGame | null;
+    const destinationLabel = folderGame && folderGame !== 'other'
+      ? `Las cartas se moverán a tu carpeta default de ${gameLabel(folderGame)}.`
+      : 'Las cartas quedarán sin carpeta.';
+    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder?.name}"? ${destinationLabel}`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive',
         onPress: async () => {
+          if (user) await reassignFolderCardsToDefault(user.id, id);
           await supabase.from('collection_folders').delete().eq('id', id);
           requestCollectionRefresh();
           router.back();
@@ -279,11 +294,12 @@ export default function FolderDetailScreen() {
     ]);
   }
 
-  const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
-  const totalValue = cards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
+  const visibleCards = useMemo(() => cards.filter(c => !pendingDeleteIds.has(c.id)), [cards, pendingDeleteIds]);
+  const totalCards = visibleCards.reduce((sum, c) => sum + c.quantity, 0);
+  const totalValue = visibleCards.reduce((sum, c) => sum + effectivePrice(c, currency, usdToClp) * c.quantity, 0);
 
   const sortedCards = useMemo(() => {
-    const arr = [...cards];
+    const arr = [...visibleCards];
     const factor = sortDir === 'asc' ? 1 : -1;
     if (sortBy === 'number') {
       arr.sort((a, b) => {
@@ -300,7 +316,7 @@ export default function FolderDetailScreen() {
       arr.sort((a, b) => (effectivePrice(a, currency, usdToClp) - effectivePrice(b, currency, usdToClp)) * factor);
     }
     return arr;
-  }, [cards, sortBy, sortDir, currency, usdToClp]);
+  }, [visibleCards, sortBy, sortDir, currency, usdToClp]);
 
   if (loading || authLoading || !rateReady) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
   if (!folder) return null;
@@ -408,7 +424,7 @@ export default function FolderDetailScreen() {
             <Text style={styles.emptyText}>Toca + para agregar cartas</Text>
           </View>
         }
-        contentContainerStyle={cards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: selectionMode ? 96 : 24 }}
+        contentContainerStyle={sortedCards.length === 0 ? { flex: 1 } : { padding: 8, paddingBottom: selectionMode ? 96 : 24 }}
       />
 
       {selectionMode && (
@@ -428,6 +444,14 @@ export default function FolderDetailScreen() {
           >
             <Ionicons name="folder-open-outline" size={20} color={selectedCards.size > 0 ? '#94A3B8' : '#475569'} />
             <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Quitar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
+            onPress={() => bulkToggleField('is_foil')}
+            disabled={selectedCards.size === 0}
+          >
+            <Ionicons name="star-outline" size={20} color={selectedCards.size > 0 ? '#93C5FD' : '#475569'} />
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Foil</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
@@ -466,9 +490,7 @@ export default function FolderDetailScreen() {
               </Text>
               {allFolders.filter(f => f.id !== id).map(f => (
                 <TouchableOpacity key={f.id} style={styles.sheetOption} onPress={() => bulkAssignFolder(f.id)}>
-                  <View style={[styles.folderRowIcon, { backgroundColor: f.color + '33' }]}>
-                    <Ionicons name="folder" size={20} color={f.color} />
-                  </View>
+                  <FolderIcon game={f.is_default ? (f.game ?? null) : null} color={f.color} boxSize={36} iconSize={20} borderRadius={8} />
                   <Text style={styles.sheetOptionText}>{f.name}</Text>
                 </TouchableOpacity>
               ))}
@@ -488,6 +510,13 @@ export default function FolderDetailScreen() {
         userId={user!.id}
         onClose={() => setShowPicker(false)}
         onAdded={() => { setShowPicker(false); fetchCards(); }}
+      />
+
+      <UndoSnackbar
+        visible={pendingDeleteIds.size > 0}
+        message={`${pendingDeleteIds.size} carta${pendingDeleteIds.size !== 1 ? 's' : ''} eliminada${pendingDeleteIds.size !== 1 ? 's' : ''}`}
+        onUndo={undoPendingDelete}
+        bottomOffset={40}
       />
 
       <Modal visible={showAddSheet} transparent animationType="slide" onRequestClose={() => setShowAddSheet(false)}>
