@@ -16,6 +16,7 @@ import { getOrCreateDefaultFolder } from '@/lib/defaultFolders';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { formatPrice, currencyLabel } from '@/lib/currency';
 import { resolveEnabledGames } from '@/lib/enabledGames';
+import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -207,10 +208,17 @@ export default function AddCardScreen() {
     return () => { mounted = false; };
   }, [currency]);
 
-  async function resolveFolderId(game: TCGGame): Promise<string | null> {
-    if (lockedFolderId) return lockedFolderId;
-    if (!user) return null;
-    return getOrCreateDefaultFolder(user.id, game);
+  type ResolveFolderResult = { folderId: string | null } | { error: string };
+  async function resolveFolderId(game: TCGGame): Promise<ResolveFolderResult> {
+    if (lockedFolderId) {
+      const check = await validateFolderGame(lockedFolderId, [game]);
+      if (!check.ok) {
+        return { error: `Esta carpeta solo permite cartas de ${gameLabel(check.folderGame)}.` };
+      }
+      return { folderId: lockedFolderId };
+    }
+    if (!user) return { folderId: null };
+    return { folderId: await getOrCreateDefaultFolder(user.id, game) };
   }
 
   const current = stack[stack.length - 1];
@@ -519,7 +527,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
-  resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  resolveFolderId: (game: TCGGame) => Promise<{ folderId: string | null } | { error: string }>;
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
@@ -598,7 +606,9 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
 
   saveRef.current = async () => {
     if (selected.size === 0) return;
-    const folderId = await resolveFolderId(game);
+    const res = await resolveFolderId(game);
+    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    const folderId = res.folderId;
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -711,7 +721,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
   userId: string;
   onSave: () => void;
   onCtxChange: (ctx: SaveCtx | null) => void;
-  resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  resolveFolderId: (game: TCGGame) => Promise<{ folderId: string | null } | { error: string }>;
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
@@ -764,7 +774,9 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
 
   saveRef.current = async () => {
     if (selected.size === 0) return;
-    const folderId = await resolveFolderId(game);
+    const res = await resolveFolderId(game);
+    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    const folderId = res.folderId;
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
       user_id: userId,
@@ -897,7 +909,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
 
 function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, usdToClp }: {
   game: TCGGame; card: PkmCard; userId: string; onSave: () => void;
-  resolveFolderId: (game: TCGGame) => Promise<string | null>;
+  resolveFolderId: (game: TCGGame) => Promise<{ folderId: string | null } | { error: string }>;
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
@@ -909,7 +921,9 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    const folderId = await resolveFolderId(game);
+    const res = await resolveFolderId(game);
+    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    const folderId = res.folderId;
     setSaving(true);
     const { error } = await upsertCollectionCards([{
       user_id: userId,
