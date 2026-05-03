@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "TCG Safe",
-    "slug": "tcg-safe",
+    "name": "Trocora",
+    "slug": "trocora",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
-    "scheme": "tcgsafe",
+    "scheme": "trocora",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,9 +15,8 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.tcgsafe.app",
+      "bundleIdentifier": "com.trocora.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Para escanear cartas TCG",
         "NSPhotoLibraryUsageDescription": "Para subir fotos de cartas",
         "NSLocationWhenInUseUsageDescription": "Para sugerir zonas seguras cercanas",
         "ITSAppUsesNonExemptEncryption": false
@@ -28,24 +27,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F172A"
       },
-      "package": "com.tcgsafe.app",
+      "package": "com.trocora.app",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.ACCESS_FINE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -54,7 +40,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-camera",
       [
         "expo-location",
         {
