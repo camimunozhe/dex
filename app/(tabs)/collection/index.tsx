@@ -352,7 +352,7 @@ export default function CollectionScreen() {
   // cards aren't left as live rows in the DB if the user closes the app mid-undo.
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state !== 'active') commitPendingDelete();
+      if (state === 'background') commitPendingDelete();
     });
     return () => {
       sub.remove();

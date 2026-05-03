@@ -251,7 +251,7 @@ export default function FolderDetailScreen() {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state !== 'active') commitPendingDelete();
+      if (state === 'background') commitPendingDelete();
     });
     return () => {
       sub.remove();
