@@ -4,7 +4,7 @@ import { subscribeCollection, removeCollectionCard } from '@/lib/collectionRefre
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
-  Dimensions, ScrollView, Alert, Modal, Switch,
+  Dimensions, ScrollView, Alert, Modal, Switch, AppState,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -346,14 +346,21 @@ export default function CollectionScreen() {
     pendingDeleteTimer.current = setTimeout(() => { commitPendingDelete(); }, 5000);
   }
 
-  // Commit on unmount so soft-deleted cards aren't left dangling in the DB on app close.
-  useEffect(() => () => {
-    if (pendingDeleteRef.current.size > 0) {
-      const ids = Array.from(pendingDeleteRef.current);
-      supabase.from('cards_collection').delete().in('id', ids);
-      ids.forEach(cardId => removeCollectionCard(cardId));
-    }
-    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+  // Commit pending deletes when the app backgrounds OR on unmount, so soft-deleted
+  // cards aren't left as live rows in the DB if the user closes the app mid-undo.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') commitPendingDelete();
+    });
+    return () => {
+      sub.remove();
+      if (pendingDeleteRef.current.size > 0) {
+        const ids = Array.from(pendingDeleteRef.current);
+        supabase.from('cards_collection').delete().in('id', ids);
+        ids.forEach(cardId => removeCollectionCard(cardId));
+      }
+      if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+    };
   }, []);
 
   const totalCards = visibleUserCards.reduce((sum, c) => sum + c.quantity, 0);

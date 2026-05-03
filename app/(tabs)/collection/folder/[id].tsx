@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, RefreshControl,
-  Dimensions, Modal, Alert, TextInput,
+  Dimensions, Modal, Alert, TextInput, AppState,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -249,13 +249,19 @@ export default function FolderDetailScreen() {
     pendingDeleteTimer.current = setTimeout(() => { commitPendingDelete(); }, 5000);
   }
 
-  useEffect(() => () => {
-    if (pendingDeleteRef.current.size > 0) {
-      const ids = Array.from(pendingDeleteRef.current);
-      supabase.from('cards_collection').delete().in('id', ids);
-      ids.forEach(cardId => removeCollectionCard(cardId));
-    }
-    if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') commitPendingDelete();
+    });
+    return () => {
+      sub.remove();
+      if (pendingDeleteRef.current.size > 0) {
+        const ids = Array.from(pendingDeleteRef.current);
+        supabase.from('cards_collection').delete().in('id', ids);
+        ids.forEach(cardId => removeCollectionCard(cardId));
+      }
+      if (pendingDeleteTimer.current) clearTimeout(pendingDeleteTimer.current);
+    };
   }, []);
 
   function openSearchNewCard() {
