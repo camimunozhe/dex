@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ScrollView, SafeAreaView, FlatList,
+  ScrollView, SafeAreaView, FlatList,
   ActivityIndicator, Switch, Dimensions,
 } from 'react-native';
+import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
@@ -396,6 +397,7 @@ function SetsStep({ game, onSelect }: { game: TCGGame; onSelect: (id: string, na
 }
 
 function PokemonSetsStep({ onSelect }: { onSelect: (id: string, name: string) => void }) {
+  const dialog = useDialog();
   const [sets, setSets] = useState<PkmSet[]>([]);
   const [filtered, setFiltered] = useState<PkmSet[]>([]);
   const [search, setSearch] = useState('');
@@ -407,7 +409,7 @@ function PokemonSetsStep({ onSelect }: { onSelect: (id: string, name: string) =>
       .select('id, name, series, total, release_date, symbol_url, logo_url')
       .order('release_date', { ascending: false })
       .then(({ data, error }) => {
-        if (error) Alert.alert('Error', 'No se pudo cargar los sets');
+        if (error) dialog.alert({ title: 'Error', message: 'No se pudo cargar los sets' });
         setSets(data ?? []);
         setFiltered(data ?? []);
         setLoading(false);
@@ -456,6 +458,7 @@ const MTG_TYPE_LABEL: Record<string, string> = {
 };
 
 function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => void }) {
+  const dialog = useDialog();
   const [sets, setSets] = useState<MtgSet[]>([]);
   const [filtered, setFiltered] = useState<MtgSet[]>([]);
   const [search, setSearch] = useState('');
@@ -470,7 +473,7 @@ function MagicSetsStep({ onSelect }: { onSelect: (id: string, name: string) => v
       .not('released_at', 'is', null)
       .order('released_at', { ascending: false })
       .then(({ data, error }) => {
-        if (error) Alert.alert('Error', 'No se pudo cargar los sets de Magic');
+        if (error) dialog.alert({ title: 'Error', message: 'No se pudo cargar los sets de Magic' });
         setSets((data ?? []) as MtgSet[]);
         setFiltered((data ?? []) as MtgSet[]);
         setLoading(false);
@@ -531,6 +534,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
+  const dialog = useDialog();
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Map<string, Selection>>(new Map());
@@ -546,7 +550,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
         .select('id, name, collector_number, set_id, set_name, image_url, image_url_large, tcgplayer_normal_market, tcgplayer_foil_market')
         .eq('set_id', setId)
         .then(({ data, error }) => {
-          if (error) Alert.alert('Error', 'No se pudo cargar las cartas');
+          if (error) dialog.alert({ title: 'Error', message: 'No se pudo cargar las cartas' });
           const sorted = (data ?? []).sort((a, b) => {
             const na = parseInt(a.collector_number ?? '', 10);
             const nb = parseInt(b.collector_number ?? '', 10);
@@ -572,7 +576,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
         .select('id, name, number, set_id, set_name, image_url, image_url_large, supertype, tcgplayer_normal_market, tcgplayer_foil_market')
         .eq('set_id', setId)
         .then(({ data, error }) => {
-          if (error) Alert.alert('Error', 'No se pudo cargar las cartas');
+          if (error) dialog.alert({ title: 'Error', message: 'No se pudo cargar las cartas' });
           const sorted = (data ?? []).sort((a, b) => {
             const na = parseInt(a.number, 10);
             const nb = parseInt(b.number, 10);
@@ -607,7 +611,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
   saveRef.current = async () => {
     if (selected.size === 0) return;
     const res = await resolveFolderId(game);
-    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    if ('error' in res) { dialog.alert({ title: 'Carpeta inválida', message: res.error }); return; }
     const folderId = res.folderId;
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
@@ -631,7 +635,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
     }));
     const { error } = await upsertCollectionCards(rows);
     setSaving(false);
-    if (error) Alert.alert('Error', error.message);
+    if (error) dialog.alert({ title: 'Error', message: error.message });
     else onSave();
   };
 
@@ -725,6 +729,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
+  const dialog = useDialog();
   const [query, setQuery] = useState('');
   const [cards, setCards] = useState<PkmCard[]>([]);
   const [loading, setLoading] = useState(false);
@@ -746,7 +751,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
         .ilike('name', `%${query.trim()}%`)
         .order('name')
         .limit(60);
-      if (error) Alert.alert('Error', 'No se pudo realizar la búsqueda');
+      if (error) dialog.alert({ title: 'Error', message: 'No se pudo realizar la búsqueda' });
       setCards(data ?? []);
       setLoading(false);
     }, 400);
@@ -775,7 +780,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
   saveRef.current = async () => {
     if (selected.size === 0) return;
     const res = await resolveFolderId(game);
-    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    if ('error' in res) { dialog.alert({ title: 'Carpeta inválida', message: res.error }); return; }
     const folderId = res.folderId;
     setSaving(true);
     const rows = Array.from(selected.values()).map(({ card, qty }) => ({
@@ -799,7 +804,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
     }));
     const { error } = await upsertCollectionCards(rows);
     setSaving(false);
-    if (error) Alert.alert('Error', error.message);
+    if (error) dialog.alert({ title: 'Error', message: error.message });
     else onSave();
   };
 
@@ -913,6 +918,7 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
   currency: import('@/types/database').Currency;
   usdToClp: number;
 }) {
+  const dialog = useDialog();
   const [condition, setCondition] = useState<CardCondition>('mint');
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
@@ -922,7 +928,7 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
 
   async function handleSave() {
     const res = await resolveFolderId(game);
-    if ('error' in res) { Alert.alert('Carpeta inválida', res.error); return; }
+    if ('error' in res) { dialog.alert({ title: 'Carpeta inválida', message: res.error }); return; }
     const folderId = res.folderId;
     setSaving(true);
     const { error } = await upsertCollectionCards([{
@@ -944,7 +950,7 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
       folder_id: folderId,
     }]);
     setSaving(false);
-    if (error) Alert.alert('Error', error.message);
+    if (error) dialog.alert({ title: 'Error', message: error.message });
     else onSave();
   }
 

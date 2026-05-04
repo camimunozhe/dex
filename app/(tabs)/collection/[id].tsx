@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Alert, ScrollView, ActivityIndicator, Modal, FlatList,
+  ScrollView, ActivityIndicator, Modal, FlatList,
   TextInput, Switch, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { requestCollectionRefresh, patchCollectionCard, removeCollectionCard } from '@/lib/collectionRefresh';
@@ -64,6 +65,7 @@ export default function CardDetailScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
+  const dialog = useDialog();
   type CardWithPrice = CardWithCatalog;
   const [card, setCard] = useState<CardWithPrice | null>(null);
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
@@ -119,24 +121,24 @@ export default function CardDetailScreen() {
   }, [card?.id, currency, usdToClp]);
 
   async function handleDelete() {
-    Alert.alert('Eliminar carta', '¿Estás seguro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          await supabase.from('cards_collection').delete().eq('id', id);
-          removeCollectionCard(id);
-          const folderId = card?.folder_id;
-          if (router.canGoBack()) {
-            router.back();
-          } else if (folderId) {
-            router.replace(`/(tabs)/collection/folder/${folderId}`);
-          } else {
-            router.replace('/(tabs)/collection');
-          }
-        },
+    dialog.confirm({
+      title: 'Eliminar carta',
+      message: '¿Estás seguro?',
+      confirmText: 'Eliminar',
+      destructive: true,
+      onConfirm: async () => {
+        await supabase.from('cards_collection').delete().eq('id', id);
+        removeCollectionCard(id);
+        const folderId = card?.folder_id;
+        if (router.canGoBack()) {
+          router.back();
+        } else if (folderId) {
+          router.replace(`/(tabs)/collection/folder/${folderId}`);
+        } else {
+          router.replace('/(tabs)/collection');
+        }
       },
-    ]);
+    });
   }
 
   async function toggleField(field: 'is_for_trade' | 'is_for_sale', value: boolean) {
@@ -209,7 +211,7 @@ export default function CardDetailScreen() {
     if (folderId && card) {
       const check = await validateFolderGame(folderId, [card.game]);
       if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        dialog.alert({ title: 'Carpeta de otro juego', message: `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.` });
         return;
       }
     }

@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { DialogProvider } from '@/lib/AppDialog';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -37,8 +38,10 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
       <AuthProvider>
-        <StatusBar style="light" />
-        <RootNavigator />
+        <DialogProvider>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </DialogProvider>
       </AuthProvider>
     </View>
   );

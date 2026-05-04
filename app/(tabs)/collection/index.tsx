@@ -4,8 +4,9 @@ import { subscribeCollection, removeCollectionCard, patchCollectionCard } from '
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
-  Dimensions, ScrollView, Alert, Modal, Switch, AppState,
+  Dimensions, ScrollView, Modal, Switch, AppState,
 } from 'react-native';
+import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +47,7 @@ export default function CollectionScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
+  const dialog = useDialog();
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -198,24 +200,24 @@ export default function CollectionScreen() {
   async function deleteFolderConfirmed(folder: CollectionFolder) {
     setFolderActionFolder(null);
     if (folder.is_default) {
-      Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
+      dialog.alert({ title: 'Carpeta default', message: 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.' });
       return;
     }
     const folderGame = folderGameMap[folder.id];
     const destinationLabel = folderGame && folderGame !== 'other'
       ? `Las cartas se moverán a tu carpeta default de ${gameLabel(folderGame)}.`
       : 'Las cartas quedarán sin carpeta.';
-    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder.name}"? ${destinationLabel}`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          if (user) await reassignFolderCardsToDefault(user.id, folder.id);
-          await supabase.from('collection_folders').delete().eq('id', folder.id);
-          fetchFolders(); fetchAllCards();
-        },
+    dialog.confirm({
+      title: 'Eliminar carpeta',
+      message: `¿Eliminar "${folder.name}"? ${destinationLabel}`,
+      confirmText: 'Eliminar',
+      destructive: true,
+      onConfirm: async () => {
+        if (user) await reassignFolderCardsToDefault(user.id, folder.id);
+        await supabase.from('collection_folders').delete().eq('id', folder.id);
+        fetchFolders(); fetchAllCards();
       },
-    ]);
+    });
   }
 
   function handleCardPress(card: CardCollectionWithPrice) {
@@ -262,18 +264,18 @@ export default function CollectionScreen() {
   }
 
   async function handleDeleteCard(cardId: string) {
-    Alert.alert('Eliminar carta', '¿Estás seguro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          await supabase.from('cards_collection').delete().eq('id', cardId);
-          setAllUserCards(prev => prev.filter(c => c.id !== cardId));
-          setCardActionCard(null);
-          removeCollectionCard(cardId);
-        },
+    dialog.confirm({
+      title: 'Eliminar carta',
+      message: '¿Estás seguro?',
+      confirmText: 'Eliminar',
+      destructive: true,
+      onConfirm: async () => {
+        await supabase.from('cards_collection').delete().eq('id', cardId);
+        setAllUserCards(prev => prev.filter(c => c.id !== cardId));
+        setCardActionCard(null);
+        removeCollectionCard(cardId);
       },
-    ]);
+    });
   }
 
   async function assignFolder(cardId: string, folderId: string | null) {
@@ -282,7 +284,7 @@ export default function CollectionScreen() {
       if (card) {
         const check = await validateFolderGame(folderId, [card.game]);
         if (!check.ok) {
-          Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+          dialog.alert({ title: 'Carpeta de otro juego', message: `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.` });
           return;
         }
       }
@@ -299,7 +301,7 @@ export default function CollectionScreen() {
       const games = allCards.filter(c => ids.includes(c.id)).map(c => c.game);
       const check = await validateFolderGame(folderId, games);
       if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        dialog.alert({ title: 'Carpeta de otro juego', message: `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.` });
         return;
       }
     }

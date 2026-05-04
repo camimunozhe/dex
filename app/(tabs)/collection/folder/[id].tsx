@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, RefreshControl,
-  Dimensions, Modal, Alert, TextInput, AppState,
+  Dimensions, Modal, TextInput, AppState,
 } from 'react-native';
+import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +42,7 @@ export default function FolderDetailScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
+  const dialog = useDialog();
 
   const [folder, setFolder] = useState<CollectionFolder | null>(null);
   const [cards, setCards] = useState<CardCollectionWithPrice[]>([]);
@@ -199,7 +201,7 @@ export default function FolderDetailScreen() {
       const games = cards.filter(c => selectedCards.has(c.id)).map(c => c.game);
       const check = await validateFolderGame(folderId, games);
       if (!check.ok) {
-        Alert.alert('Carpeta de otro juego', `Esa carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+        dialog.alert({ title: 'Carpeta de otro juego', message: `Esa carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.` });
         return;
       }
     }
@@ -279,25 +281,25 @@ export default function FolderDetailScreen() {
 
   async function deleteFolder() {
     if (folder?.is_default) {
-      Alert.alert('Carpeta default', 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.');
+      dialog.alert({ title: 'Carpeta default', message: 'No se puede eliminar la carpeta default de un juego. Podés renombrarla.' });
       return;
     }
     const folderGame = (cards[0]?.game ?? null) as TCGGame | null;
     const destinationLabel = folderGame && folderGame !== 'other'
       ? `Las cartas se moverán a tu carpeta default de ${gameLabel(folderGame)}.`
       : 'Las cartas quedarán sin carpeta.';
-    Alert.alert('Eliminar carpeta', `¿Eliminar "${folder?.name}"? ${destinationLabel}`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          if (user) await reassignFolderCardsToDefault(user.id, id);
-          await supabase.from('collection_folders').delete().eq('id', id);
-          requestCollectionRefresh();
-          router.back();
-        },
+    dialog.confirm({
+      title: 'Eliminar carpeta',
+      message: `¿Eliminar "${folder?.name}"? ${destinationLabel}`,
+      confirmText: 'Eliminar',
+      destructive: true,
+      onConfirm: async () => {
+        if (user) await reassignFolderCardsToDefault(user.id, id);
+        await supabase.from('collection_folders').delete().eq('id', id);
+        requestCollectionRefresh();
+        router.back();
       },
-    ]);
+    });
   }
 
   const visibleCards = useMemo(() => cards.filter(c => !pendingDeleteIds.has(c.id)), [cards, pendingDeleteIds]);
@@ -568,6 +570,7 @@ function CardPickerModal({
   onClose: () => void;
   onAdded: () => void;
 }) {
+  const dialog = useDialog();
   const [allCards, setAllCards] = useState<CardCollection[]>([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -610,7 +613,7 @@ function CardPickerModal({
     const check = await validateFolderGame(folderId, games);
     if (!check.ok) {
       setSaving(false);
-      Alert.alert('Carpeta de otro juego', `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.`);
+      dialog.alert({ title: 'Carpeta de otro juego', message: `Esta carpeta solo acepta cartas de ${gameLabel(check.folderGame)}.` });
       return;
     }
     await supabase
