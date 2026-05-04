@@ -129,12 +129,13 @@ export default function CollectionScreen() {
 
   const uniqueGames = useMemo(() => new Set(allCards.map(c => c.game as TCGGame)), [allCards]);
 
+  const searching = search.trim().length > 0;
   const cards = useMemo(() => {
-    let result = allCards;
+    let result = searching ? visibleUserCards : allCards;
     if (filterGame !== 'all') result = result.filter(c => c.game === filterGame);
-    if (search.trim()) result = result.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()));
+    if (searching) result = result.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()));
     return result;
-  }, [allCards, filterGame, search]);
+  }, [allCards, visibleUserCards, filterGame, search, searching]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -422,6 +423,7 @@ export default function CollectionScreen() {
             <CollectionHeader
               search={search}
               onSearchChange={setSearch}
+              searching={searching}
               folders={visibleFolders}
               folderCounts={folderCounts}
               folderValues={folderValues}
@@ -730,11 +732,12 @@ function FolderActionModal({
 // ─── Collection header (scrolls with list) ───────────────────────────────────
 
 function CollectionHeader({
-  search, onSearchChange, folders, folderCounts, folderValues, folderGameMap, folderForm, setFolderForm,
+  search, onSearchChange, searching, folders, folderCounts, folderValues, folderGameMap, folderForm, setFolderForm,
   saveFolderForm, handleFolderLongPress, uniqueGames, filterGame, setFilterGame, currency, usdToClp, onFolderPress,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
+  searching: boolean;
   folders: CollectionFolder[];
   folderCounts: Record<string, number>;
   folderValues: Record<string, number>;
@@ -760,6 +763,7 @@ function CollectionHeader({
         placeholderTextColor="#475569"
       />
 
+      {!searching && (
       <View style={styles.foldersSection}>
         <View style={styles.foldersSectionHeader}>
           <Text style={styles.sectionLabel}>Carpetas</Text>
@@ -833,6 +837,7 @@ function CollectionHeader({
           </View>
         )}
       </View>
+      )}
 
       {uniqueGames.size > 1 && (
         <View style={styles.filterRow}>
