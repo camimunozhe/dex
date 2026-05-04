@@ -33,4 +33,4 @@ export function effectivePrice(card: CardWithCatalog, displayCurrency: Currency,
 }
 
 export const COLLECTION_CARD_SELECT =
-  'id, game, card_name, set_name, card_number, quantity, is_foil, is_for_trade, is_for_sale, price_reference, price_reference_currency, image_url, folder_id, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market), magic_cards(tcgplayer_normal_market, tcgplayer_foil_market)';
+  'id, game, card_name, set_name, card_number, quantity, is_foil, is_for_trade, is_for_sale, price_reference, price_reference_currency, image_url, folder_id, created_at, pokemon_cards(tcgplayer_normal_market, tcgplayer_foil_market), magic_cards(tcgplayer_normal_market, tcgplayer_foil_market)';

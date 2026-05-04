@@ -56,18 +56,18 @@ export default function FolderDetailScreen() {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [allFolders, setAllFolders] = useState<CollectionFolder[]>([]);
   const [bulkFolderOpen, setBulkFolderOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<'number' | 'name' | 'value'>('number');
+  const [sortBy, setSortBy] = useState<'number' | 'name' | 'value' | 'date'>('number');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
   const pendingDeleteRef = useRef<Set<string>>(new Set());
   const pendingDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function toggleSort(key: 'number' | 'name' | 'value') {
+  function toggleSort(key: 'number' | 'name' | 'value' | 'date') {
     if (sortBy === key) {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(key);
-      setSortDir(key === 'value' ? 'desc' : 'asc');
+      setSortDir(key === 'value' || key === 'date' ? 'desc' : 'asc');
     }
   }
 
@@ -322,6 +322,12 @@ export default function FolderDetailScreen() {
       arr.sort((a, b) => a.card_name.localeCompare(b.card_name) * factor);
     } else if (sortBy === 'value') {
       arr.sort((a, b) => (effectivePrice(a, currency, usdToClp) - effectivePrice(b, currency, usdToClp)) * factor);
+    } else if (sortBy === 'date') {
+      arr.sort((a, b) => {
+        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return (at - bt) * factor;
+      });
     }
     return arr;
   }, [visibleCards, sortBy, sortDir, currency, usdToClp]);
@@ -384,14 +390,14 @@ export default function FolderDetailScreen() {
           {cards.length > 1 && (
             <View style={styles.sortRow}>
               <Text style={styles.sortLabel}>Ordenar:</Text>
-              {(['number', 'name', 'value'] as const).map(key => (
+              {(['number', 'name', 'value', 'date'] as const).map(key => (
                 <TouchableOpacity
                   key={key}
                   style={[styles.sortChip, sortBy === key && styles.sortChipActive]}
                   onPress={() => toggleSort(key)}
                 >
                   <Text style={[styles.sortChipText, sortBy === key && styles.sortChipTextActive]}>
-                    {key === 'number' ? 'N°' : key === 'name' ? 'Nombre' : 'Valor'}
+                    {key === 'number' ? 'N°' : key === 'name' ? 'Nombre' : key === 'value' ? 'Valor' : 'Fecha'}
                   </Text>
                   {sortBy === key && (
                     <Ionicons
