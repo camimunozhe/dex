@@ -3,9 +3,10 @@ import { useFocusEffect } from 'expo-router';
 import { subscribeCollection, removeCollectionCard, patchCollectionCard } from '@/lib/collectionRefresh';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  TextInput, SafeAreaView, ActivityIndicator, RefreshControl,
+  TextInput, ActivityIndicator, RefreshControl,
   Dimensions, ScrollView, Modal, Switch, AppState,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';

@@ -2,9 +2,10 @@ import { useCallback, useState, useMemo, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  TextInput, SafeAreaView, ActivityIndicator,
+  TextInput, ActivityIndicator,
   Dimensions, ScrollView, Modal, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';

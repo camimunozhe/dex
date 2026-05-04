@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, SafeAreaView, FlatList,
+  ScrollView, FlatList,
   ActivityIndicator, Switch, Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDialog } from '@/lib/AppDialog';
 import { Image } from 'expo-image';
 import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
