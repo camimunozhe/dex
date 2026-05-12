@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { useDialog } from '@/lib/AppDialog';
 import { GAME_DISPLAY_NAMES, resolveEnabledGames } from '@/lib/enabledGames';
 
 type Reputation = { positive_count: number; negative_count: number; total_ratings: number } | null;
@@ -24,6 +25,7 @@ const VERIFICATION_BADGE: Record<string, { icon: IoniconName; color: string; lab
 
 export default function ProfileScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
+  const dialog = useDialog();
   const router = useRouter();
   const [reputation, setReputation] = useState<Reputation>(null);
   const [collectionCount, setCollectionCount] = useState(0);
@@ -106,6 +108,28 @@ export default function ProfileScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Salir', style: 'destructive', onPress: signOut },
     ]);
+  }
+
+  function handleDeleteAccount() {
+    dialog.confirm({
+      title: 'Eliminar cuenta',
+      message:
+        'Vas a borrar tu cuenta y todos tus datos: colección, carpetas, intercambios, mensajes y foto de perfil. Esta acción es permanente y no se puede deshacer.',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
+        if (error) {
+          dialog.alert({
+            title: 'No se pudo eliminar',
+            message: error.message ?? 'Intenta de nuevo en unos minutos.',
+          });
+          return;
+        }
+        await signOut();
+      },
+    });
   }
 
   const verLevel = profile?.verification_level ?? 'none';
@@ -250,6 +274,12 @@ export default function ProfileScreen() {
             </View>
             <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={handleSignOut}>
               <Text style={styles.menuItemDangerText}>Cerrar sesión</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={handleDeleteAccount}>
+              <View style={styles.menuItemContent}>
+                <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                <Text style={styles.menuItemDangerText}>Eliminar cuenta</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </View>
