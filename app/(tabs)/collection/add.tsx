@@ -120,8 +120,7 @@ type CardInsertRow = {
   condition: CardCondition;
   language?: CardLanguage;
   is_foil: boolean;
-  is_for_trade: boolean;
-  is_for_sale: boolean;
+  is_published: boolean;
   price_reference: number | null;
   price_reference_currency: import('@/types/database').Currency;
   image_url: string | null;
@@ -257,7 +256,7 @@ export default function AddCardScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={pop} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={20} color="#6366F1" />
@@ -625,8 +624,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
       condition,
       language,
       is_foil: false,
-      is_for_trade: false,
-      is_for_sale: false,
+      is_published: false,
       price_reference: null,
       price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
@@ -794,8 +792,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
       condition,
       language,
       is_foil: false,
-      is_for_trade: false,
-      is_for_sale: false,
+      is_published: false,
       price_reference: null,
       price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
@@ -941,8 +938,7 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
       quantity: parseInt(quantity) || 1,
       condition,
       is_foil: isFoil,
-      is_for_trade: isAvailable,
-      is_for_sale: false,
+      is_published: isAvailable,
       price_reference: price ? parseFloat(price) : null,
       price_reference_currency: currency,
       image_url: card.image_url_large ?? card.image_url ?? null,
@@ -987,7 +983,7 @@ function ConfirmStep({ game, card, userId, onSave, resolveFolderId, currency, us
 
       <View style={styles.switches}>
         <SwitchRow icon="star-outline" label="Foil / Holo" value={isFoil} onChange={setIsFoil} />
-        <SwitchRow icon="compass-outline" label="Disponible para ofrecer" value={isAvailable} onChange={setIsAvailable} last />
+        <SwitchRow icon="pricetag-outline" label="Publicar para intercambio o venta" value={isAvailable} onChange={setIsAvailable} last />
       </View>
 
       <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={handleSave} disabled={saving}>

@@ -142,7 +142,7 @@ export default function CardDetailScreen() {
     });
   }
 
-  async function toggleField(field: 'is_for_trade' | 'is_for_sale', value: boolean) {
+  async function toggleField(field: 'is_published', value: boolean) {
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', id);
     setCard(c => c ? { ...c, [field]: value } : c);
     patchCollectionCard(id, { [field]: value });
@@ -229,7 +229,7 @@ export default function CardDetailScreen() {
   const currentFolder = folders.find(f => f.id === card.folder_id);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>← Volver</Text>
@@ -374,26 +374,15 @@ export default function CardDetailScreen() {
               trackColor={{ true: '#3B82F6' }}
             />
           </View>
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabelRow}>
-              <Ionicons name="swap-horizontal-outline" size={16} color="#3B82F6" />
-              <Text style={styles.switchLabel}>Para intercambiar</Text>
-            </View>
-            <Switch
-              value={card.is_for_trade}
-              onValueChange={v => toggleField('is_for_trade', v)}
-              trackColor={{ true: '#3B82F6' }}
-            />
-          </View>
           <View style={[styles.switchRow, styles.switchRowLast]}>
             <View style={styles.switchLabelRow}>
               <Ionicons name="pricetag-outline" size={16} color="#4ADE80" />
-              <Text style={styles.switchLabel}>Para vender</Text>
+              <Text style={styles.switchLabel}>Publicar</Text>
             </View>
             <Switch
-              value={card.is_for_sale}
-              onValueChange={v => toggleField('is_for_sale', v)}
-              trackColor={{ true: '#4ADE80' }}
+              value={card.is_published}
+              onValueChange={v => toggleField('is_published', v)}
+              trackColor={{ true: '#6366F1' }}
             />
           </View>
         </View>

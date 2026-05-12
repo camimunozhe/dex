@@ -138,7 +138,7 @@ export function TimePickerModal({
         <TouchableOpacity activeOpacity={1} onPress={e => e.stopPropagation()}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
-            <Text style={styles.timeTitle}>Hora del encuentro</Text>
+            <Text style={styles.timeTitle}>Hora del intercambio</Text>
             <View style={styles.timeRow}>
               <TimeColumn label="Hora" values={hours} selected={h} onSelect={setH} pad />
               <Text style={styles.timeSeparator}>:</Text>

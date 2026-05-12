@@ -86,7 +86,7 @@ export default function RegisterScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="lock-closed-outline" size={14} color="#93C5FD" style={styles.infoIcon} />
             <Text style={styles.infoText}>
-              Para agendar encuentros necesitarás verificar tu identidad (nivel intermedio).
+              Para agendar intercambios necesitarás verificar tu identidad (nivel intermedio).
             </Text>
           </View>
 

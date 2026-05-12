@@ -1,17 +1,23 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { DialogProvider } from '@/lib/AppDialog';
+import { usePushTokenRegistration } from '@/lib/usePushTokenRegistration';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 
 function RootNavigator() {
-  const { session, loading } = useAuth();
+  const { session, loading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const [pendingMeetupId, setPendingMeetupId] = useState<string | null>(null);
+  const handledColdStart = useRef(false);
+
+  usePushTokenRegistration(user?.id);
 
   useEffect(() => {
     if (loading) return;
@@ -23,6 +29,28 @@ function RootNavigator() {
       router.replace('/(tabs)/collection');
     }
   }, [session, loading, segments]);
+
+  useEffect(() => {
+    if (!handledColdStart.current) {
+      handledColdStart.current = true;
+      Notifications.getLastNotificationResponseAsync().then(resp => {
+        const id = (resp?.notification.request.content.data as any)?.meetup_id;
+        if (typeof id === 'string') setPendingMeetupId(id);
+      });
+    }
+    const sub = Notifications.addNotificationResponseReceivedListener(resp => {
+      const id = (resp.notification.request.content.data as any)?.meetup_id;
+      if (typeof id === 'string') setPendingMeetupId(id);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!pendingMeetupId || loading || !session) return;
+    router.replace('/(tabs)/encuentros');
+    router.push({ pathname: '/(tabs)/encuentros/[id]', params: { id: pendingMeetupId } });
+    setPendingMeetupId(null);
+  }, [pendingMeetupId, loading, session]);
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0F172A' } }}>

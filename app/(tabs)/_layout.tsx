@@ -35,7 +35,7 @@ export default function TabsLayout() {
         name="meetups"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} label="Explorar" icon={focused ? 'compass' : 'compass-outline'} />
+            <TabIcon focused={focused} label="Explorar" icon={focused ? 'search' : 'search-outline'} />
           ),
         }}
       />
@@ -43,7 +43,7 @@ export default function TabsLayout() {
         name="encuentros"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} label="Encuentros" icon={focused ? 'people' : 'people-outline'} />
+            <TabIcon focused={focused} label="Intercambios" icon={focused ? 'swap-horizontal' : 'swap-horizontal-outline'} />
           ),
         }}
       />
@@ -62,13 +62,15 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: '#1E293B',
-    borderTopColor: '#334155',
-    borderTopWidth: 1,
+    borderTopWidth: 0,
+    elevation: 0,
     height: 70,
+    paddingTop: 6,
     paddingBottom: 8,
   },
   iconContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
     minWidth: 70,
   },

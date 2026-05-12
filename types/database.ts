@@ -44,6 +44,16 @@ export interface Database {
         Insert: Omit<MeetupRating, 'id' | 'created_at'>;
         Update: Partial<Omit<MeetupRating, 'id' | 'created_at'>>;
       };
+      messages: {
+        Row: Message;
+        Insert: Omit<Message, 'id' | 'created_at'>;
+        Update: Partial<Omit<Message, 'id' | 'meetup_id' | 'sender_id' | 'created_at'>>;
+      };
+      push_tokens: {
+        Row: PushToken;
+        Insert: Omit<PushToken, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<PushToken, 'id' | 'user_id' | 'created_at'>>;
+      };
       magic_sets: {
         Row: MagicSet;
         Insert: Omit<MagicSet, 'created_at'>;
@@ -87,6 +97,7 @@ export interface CardCollection {
   is_foil: boolean;
   is_for_trade: boolean;
   is_for_sale: boolean;
+  is_published: boolean;
   price_reference: number | null;
   price_reference_currency: Currency;
   notes: string | null;
@@ -150,9 +161,11 @@ export interface Meetup {
   status: MeetupStatus;
   safe_zone_id: string | null;
   custom_location: string | null;
-  scheduled_at: string;
+  scheduled_at: string | null;
   notes: string | null;
   agreed_price: number | null;
+  agreed_price_currency: Currency;
+  agreed_price_payer: 'proposer' | 'receiver' | null;
   counter_notes: string | null;
   last_modified_by: string | null;
   proposer_checked_in: boolean;
@@ -191,4 +204,21 @@ export interface MeetupRating {
   rating: 'positive' | 'negative';
   comment: string | null;
   created_at: string;
+}
+
+export interface Message {
+  id: string;
+  meetup_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface PushToken {
+  id: string;
+  user_id: string;
+  token: string;
+  platform: 'ios' | 'android';
+  created_at: string;
+  updated_at: string;
 }

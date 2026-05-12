@@ -213,7 +213,7 @@ export default function FolderDetailScreen() {
     exitSelectionMode();
   }
 
-  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale' | 'is_foil') {
+  async function bulkToggleField(field: 'is_published' | 'is_foil') {
     const ids = Array.from(selectedCards);
     const selectedList = cards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
@@ -337,7 +337,7 @@ export default function FolderDetailScreen() {
   if (!folder) return null;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         {selectionMode ? (
           <TouchableOpacity onPress={exitSelectionMode} style={styles.backBtn}>
@@ -470,19 +470,11 @@ export default function FolderDetailScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
-            onPress={() => bulkToggleField('is_for_trade')}
-            disabled={selectedCards.size === 0}
-          >
-            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#3B82F6' : '#475569'} />
-            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Trade</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
-            onPress={() => bulkToggleField('is_for_sale')}
+            onPress={() => bulkToggleField('is_published')}
             disabled={selectedCards.size === 0}
           >
             <Ionicons name="pricetag-outline" size={20} color={selectedCards.size > 0 ? '#4ADE80' : '#475569'} />
-            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Venta</Text>
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Publicar</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, styles.selActionBtnDanger, selectedCards.size === 0 && styles.selActionBtnDisabled]}

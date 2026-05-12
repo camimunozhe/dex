@@ -222,6 +222,30 @@ export default function CollectionScreen() {
     });
   }
 
+  async function emptyFolderConfirmed(folder: CollectionFolder) {
+    setFolderActionFolder(null);
+    const count = folderCounts[folder.id] ?? 0;
+    if (count === 0) {
+      dialog.alert({ title: 'Carpeta vacía', message: 'No hay cartas para borrar.' });
+      return;
+    }
+    dialog.confirm({
+      title: 'Vaciar carpeta',
+      message: `Se borrarán ${count} carta${count !== 1 ? 's' : ''} de "${folder.name}". Esta acción no se puede deshacer.`,
+      confirmText: 'Vaciar',
+      destructive: true,
+      onConfirm: async () => {
+        if (!user) return;
+        await supabase
+          .from('cards_collection')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('folder_id', folder.id);
+        fetchAllCards();
+      },
+    });
+  }
+
   function handleCardPress(card: CardCollectionWithPrice) {
     if (selectionMode) {
       toggleCardSelection(card.id);
@@ -259,7 +283,7 @@ export default function CollectionScreen() {
     setSelectedCards(new Set(cards.map(c => c.id)));
   }
 
-  async function handleToggleField(card: CardCollectionWithPrice, field: 'is_for_trade' | 'is_for_sale', value: boolean) {
+  async function handleToggleField(card: CardCollectionWithPrice, field: 'is_published', value: boolean) {
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', card.id);
     setAllUserCards(prev => prev.map(c => c.id === card.id ? { ...c, [field]: value } : c));
     setCardActionCard(c => c?.id === card.id ? { ...c, [field]: value } : c);
@@ -313,7 +337,7 @@ export default function CollectionScreen() {
     exitSelectionMode();
   }
 
-  async function bulkToggleField(field: 'is_for_trade' | 'is_for_sale' | 'is_foil') {
+  async function bulkToggleField(field: 'is_published' | 'is_foil') {
     const ids = Array.from(selectedCards);
     const selectedList = allCards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
@@ -375,7 +399,7 @@ export default function CollectionScreen() {
   const totalValue = unfolderedValue + folderedValue;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           {!selectionMode && (
@@ -486,19 +510,11 @@ export default function CollectionScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
-            onPress={() => bulkToggleField('is_for_trade')}
-            disabled={selectedCards.size === 0}
-          >
-            <Ionicons name="swap-horizontal-outline" size={20} color={selectedCards.size > 0 ? '#3B82F6' : '#475569'} />
-            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Intercambio</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.selActionBtn, selectedCards.size === 0 && styles.selActionBtnDisabled]}
-            onPress={() => bulkToggleField('is_for_sale')}
+            onPress={() => bulkToggleField('is_published')}
             disabled={selectedCards.size === 0}
           >
             <Ionicons name="pricetag-outline" size={20} color={selectedCards.size > 0 ? '#4ADE80' : '#475569'} />
-            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Venta</Text>
+            <Text style={[styles.selActionText, selectedCards.size === 0 && styles.selActionTextDisabled]}>Publicar</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.selActionBtn, styles.selActionBtnDanger, selectedCards.size === 0 && styles.selActionBtnDisabled]}
@@ -527,8 +543,7 @@ export default function CollectionScreen() {
           setCardActionCard(null);
           setTimeout(() => card && setFolderPickerCard(card), 300);
         }}
-        onToggleTrade={(value) => cardActionCard && handleToggleField(cardActionCard, 'is_for_trade', value)}
-        onToggleSale={(value) => cardActionCard && handleToggleField(cardActionCard, 'is_for_sale', value)}
+        onTogglePublished={(value) => cardActionCard && handleToggleField(cardActionCard, 'is_published', value)}
         onDelete={() => cardActionCard && handleDeleteCard(cardActionCard.id)}
         onStartSelect={() => {
           const card = cardActionCard;
@@ -564,6 +579,7 @@ export default function CollectionScreen() {
         folder={folderActionFolder}
         folderGame={folderActionFolder ? folderGameMap[folderActionFolder.id] ?? null : null}
         folderCount={folderActionFolder ? (folderCounts[folderActionFolder.id] ?? 0) : 0}
+        onEmpty={() => folderActionFolder && emptyFolderConfirmed(folderActionFolder)}
         onClose={() => setFolderActionFolder(null)}
         onRename={() => {
           const f = folderActionFolder!;
@@ -585,7 +601,7 @@ export default function CollectionScreen() {
 // ─── Card action modal ────────────────────────────────────────────────────────
 
 function CardActionModal({
-  visible, card, currency, usdToClp, onClose, onViewDetail, onFolderPick, onToggleTrade, onToggleSale, onDelete, onStartSelect,
+  visible, card, currency, usdToClp, onClose, onViewDetail, onFolderPick, onTogglePublished, onDelete, onStartSelect,
 }: {
   visible: boolean;
   card: CardCollectionWithPrice | null;
@@ -594,8 +610,7 @@ function CardActionModal({
   onClose: () => void;
   onViewDetail: () => void;
   onFolderPick: () => void;
-  onToggleTrade: (value: boolean) => void;
-  onToggleSale: (value: boolean) => void;
+  onTogglePublished: (value: boolean) => void;
   onDelete: () => void;
   onStartSelect: () => void;
 }) {
@@ -642,22 +657,12 @@ function CardActionModal({
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <Ionicons name="swap-horizontal-outline" size={20} color="#3B82F6" />
-            <Text style={styles.actionRowText}>Para intercambiar</Text>
-            <Switch
-              value={card.is_for_trade}
-              onValueChange={onToggleTrade}
-              trackColor={{ true: '#3B82F6' }}
-              style={{ marginLeft: 'auto' }}
-            />
-          </View>
-          <View style={styles.actionRow}>
             <Ionicons name="pricetag-outline" size={20} color="#4ADE80" />
-            <Text style={styles.actionRowText}>Para vender</Text>
+            <Text style={styles.actionRowText}>Publicar</Text>
             <Switch
-              value={card.is_for_sale}
-              onValueChange={onToggleSale}
-              trackColor={{ true: '#4ADE80' }}
+              value={card.is_published}
+              onValueChange={onTogglePublished}
+              trackColor={{ true: '#6366F1' }}
               style={{ marginLeft: 'auto' }}
             />
           </View>
@@ -684,7 +689,7 @@ function CardActionModal({
 // ─── Folder action modal ─────────────────────────────────────────────────────
 
 function FolderActionModal({
-  visible, folder, folderGame, folderCount, onClose, onRename, onDelete,
+  visible, folder, folderGame, folderCount, onClose, onRename, onEmpty, onDelete,
 }: {
   visible: boolean;
   folder: CollectionFolder | null;
@@ -692,6 +697,7 @@ function FolderActionModal({
   folderCount: number;
   onClose: () => void;
   onRename: () => void;
+  onEmpty: () => void;
   onDelete: () => void;
 }) {
   if (!folder) return null;
@@ -714,6 +720,16 @@ function FolderActionModal({
             <Ionicons name="pencil-outline" size={20} color="#94A3B8" />
             <Text style={styles.actionRowText}>Renombrar</Text>
           </TouchableOpacity>
+
+          {folderCount > 0 && (
+            <>
+              <View style={styles.actionSeparator} />
+              <TouchableOpacity style={styles.actionRow} onPress={onEmpty}>
+                <Ionicons name="trash-bin-outline" size={20} color="#F97316" />
+                <Text style={[styles.actionRowText, { color: '#F97316' }]}>Vaciar carpeta</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           {!folder.is_default && (
             <>

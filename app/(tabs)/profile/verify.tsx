@@ -15,7 +15,7 @@ const LEVELS = [
     label: 'Básico',
     badge: '🔵',
     description: 'Email + teléfono confirmado',
-    features: ['Perfil visible', 'Ver encuentros de otros'],
+    features: ['Perfil visible', 'Ver intercambios de otros'],
     requirement: 'Confirma tu número de teléfono',
   },
   {
@@ -23,7 +23,7 @@ const LEVELS = [
     label: 'Intermedio',
     badge: '🟢',
     description: 'Documento de identidad verificado',
-    features: ['Todo lo anterior', '✅ Crear y aceptar encuentros', 'Badge de confianza visible'],
+    features: ['Todo lo anterior', '✅ Crear y aceptar intercambios', 'Badge de confianza visible'],
     requirement: 'Sube foto de tu cédula / DNI / RUT / INE',
   },
   {
@@ -79,7 +79,7 @@ export default function VerifyScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>← Volver</Text>

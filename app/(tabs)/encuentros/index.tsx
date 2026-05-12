@@ -18,16 +18,10 @@ type MeetupWithProfiles = Meetup & {
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending:   { label: 'Pendiente',  color: '#FACC15' },
-  countered: { label: 'Contra-propuesta', color: '#FB923C' },
+  countered: { label: 'Pendiente',  color: '#FACC15' },
   confirmed: { label: 'Confirmado', color: '#4ADE80' },
   completed: { label: 'Completado', color: '#64748B' },
   cancelled: { label: 'Cancelado',  color: '#EF4444' },
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  trade: 'Intercambio',
-  purchase: 'Compra',
-  casual: 'Casual',
 };
 
 export default function EncuentrosScreen() {
@@ -36,7 +30,6 @@ export default function EncuentrosScreen() {
   const [meetups, setMeetups] = useState<MeetupWithProfiles[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [tab, setTab] = useState<'received' | 'sent'>('received');
   const isFirstMount = useRef(true);
 
   const fetchMeetups = useCallback(async () => {
@@ -65,43 +58,17 @@ export default function EncuentrosScreen() {
     }
   }, [fetchMeetups]));
 
-  const filtered = meetups.filter(m =>
-    tab === 'received' ? m.receiver_id === user?.id : m.proposer_id === user?.id
-  );
-
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Encuentros</Text>
-      </View>
-
-      <View style={styles.segmented}>
-        <TouchableOpacity
-          style={[styles.segBtn, tab === 'received' && styles.segBtnActive]}
-          onPress={() => setTab('received')}
-        >
-          <Text style={[styles.segText, tab === 'received' && styles.segTextActive]}>Recibidas</Text>
-          {meetups.filter(m => m.receiver_id === user?.id && m.status === 'pending').length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {meetups.filter(m => m.receiver_id === user?.id && m.status === 'pending').length}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.segBtn, tab === 'sent' && styles.segBtnActive]}
-          onPress={() => setTab('sent')}
-        >
-          <Text style={[styles.segText, tab === 'sent' && styles.segTextActive]}>Enviadas</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>Intercambios</Text>
       </View>
 
       {loading ? (
         <ActivityIndicator style={{ flex: 1 }} color="#94A3B8" />
       ) : (
         <FlatList
-          data={filtered}
+          data={meetups}
           keyExtractor={item => item.id}
           contentContainerStyle={{ padding: 16, gap: 10 }}
           renderItem={({ item }) => (
@@ -111,7 +78,7 @@ export default function EncuentrosScreen() {
               onPress={() => router.push({ pathname: '/(tabs)/encuentros/[id]', params: { id: item.id } })}
             />
           )}
-          ListEmptyComponent={<EmptyState tab={tab} />}
+          ListEmptyComponent={<EmptyState />}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#6366F1" />
           }
@@ -128,8 +95,11 @@ function MeetupRow({ meetup, isReceived, onPress }: {
 }) {
   const other = isReceived ? meetup.proposer : meetup.receiver;
   const status = STATUS_LABEL[meetup.status] ?? { label: meetup.status, color: '#94A3B8' };
-  const date = new Date(meetup.scheduled_at);
-  const dateStr = date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateStr = new Date(meetup.created_at)
+    .toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  const dirIcon = isReceived ? 'arrow-down-circle' : 'arrow-up-circle';
+  const dirColor = isReceived ? '#4ADE80' : '#A5B4FC';
+  const dirLabel = isReceived ? 'Recibido' : 'Enviado';
 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
@@ -139,6 +109,9 @@ function MeetupRow({ meetup, isReceived, onPress }: {
         ) : (
           <Ionicons name="person-outline" size={20} color="#64748B" />
         )}
+        <View style={[styles.dirBadge, { backgroundColor: dirColor }]}>
+          <Ionicons name={dirIcon} size={14} color="#0F172A" />
+        </View>
       </View>
       <View style={styles.rowInfo}>
         <View style={styles.rowTop}>
@@ -148,8 +121,8 @@ function MeetupRow({ meetup, isReceived, onPress }: {
           </View>
         </View>
         <View style={styles.rowBottom}>
-          <Text style={styles.rowType}>{TYPE_LABEL[meetup.type] ?? meetup.type}</Text>
-          <Text style={styles.rowDate}>{dateStr}</Text>
+          <Text style={[styles.rowType, { color: dirColor }]}>{dirLabel}</Text>
+          <Text style={styles.rowDate}>· {dateStr}</Text>
         </View>
       </View>
       <Ionicons name="chevron-forward-outline" size={16} color="#475569" />
@@ -157,17 +130,13 @@ function MeetupRow({ meetup, isReceived, onPress }: {
   );
 }
 
-function EmptyState({ tab }: { tab: 'received' | 'sent' }) {
+function EmptyState() {
   return (
     <View style={styles.empty}>
-      <Ionicons name="people-outline" size={56} color="#334155" style={{ marginBottom: 12 }} />
-      <Text style={styles.emptyTitle}>
-        {tab === 'received' ? 'Sin propuestas recibidas' : 'No has enviado propuestas'}
-      </Text>
+      <Ionicons name="swap-horizontal-outline" size={56} color="#334155" style={{ marginBottom: 12 }} />
+      <Text style={styles.emptyTitle}>Sin intercambios</Text>
       <Text style={styles.emptyText}>
-        {tab === 'received'
-          ? 'Cuando alguien quiera intercambiar o comprarte una carta, aparecerá aquí'
-          : 'Explora cartas de otros coleccionistas y propón un encuentro'}
+        Explora cartas de otros coleccionistas y propón un intercambio
       </Text>
     </View>
   );
@@ -178,23 +147,6 @@ const styles = StyleSheet.create({
   header: { padding: 20, paddingTop: 16 },
   title: { fontSize: 24, fontWeight: '800', color: '#F1F5F9' },
 
-  segmented: {
-    flexDirection: 'row', marginHorizontal: 16, marginBottom: 4,
-    backgroundColor: '#1E293B', borderRadius: 12, borderWidth: 1, borderColor: '#334155', padding: 4,
-  },
-  segBtn: {
-    flex: 1, paddingVertical: 8, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
-  },
-  segBtnActive: { backgroundColor: '#6366F1' },
-  segText: { color: '#64748B', fontSize: 14, fontWeight: '600' },
-  segTextActive: { color: '#fff' },
-  badge: {
-    backgroundColor: '#EF4444', borderRadius: 8,
-    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
-  },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#1E293B', borderRadius: 14, borderWidth: 1, borderColor: '#334155', padding: 14,
@@ -202,9 +154,15 @@ const styles = StyleSheet.create({
   rowAvatar: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155',
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatar: { width: 44, height: 44 },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
+  dirBadge: {
+    position: 'absolute', right: -4, bottom: -4,
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#1E293B',
+  },
   rowInfo: { flex: 1, gap: 4 },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rowUsername: { color: '#F1F5F9', fontSize: 15, fontWeight: '700' },

@@ -83,10 +83,11 @@ export default function ProfileScreen() {
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+      const bustedUrl = `${publicUrl}?v=${Date.now()}`;
 
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: bustedUrl })
         .eq('id', user!.id);
 
       if (updateError) throw updateError;
@@ -116,7 +117,7 @@ export default function ProfileScreen() {
   if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView>
         {/* Header */}
         <View style={styles.hero}>
@@ -155,7 +156,7 @@ export default function ProfileScreen() {
         {/* Stats */}
         <View style={styles.stats}>
           <StatBox label="Cartas" value={String(collectionCount)} />
-          <StatBox label="Encuentros" value={String(meetupCount)} />
+          <StatBox label="Intercambios" value={String(meetupCount)} />
           <StatBox
             label="Reputación"
             value={positiveRate !== null ? `${positiveRate}%` : '—'}

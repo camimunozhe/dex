@@ -63,7 +63,6 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterGame, setFilterGame] = useState<TCGGame | 'all'>('all');
-  const [filterType, setFilterType] = useState<'all' | 'trade' | 'sale'>('all');
   const [selectedCard, setSelectedCard] = useState<ExploreCard | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const isFirstMount = useRef(true);
@@ -73,7 +72,7 @@ export default function ExploreScreen() {
     const { data } = await supabase
       .from('cards_collection')
       .select('*, profiles(username, avatar_url)')
-      .or('is_for_trade.eq.true,is_for_sale.eq.true')
+      .eq('is_published', true)
       .neq('user_id', user.id)
       .order('created_at', { ascending: false });
     setAllCards((data as ExploreCard[]) ?? []);
@@ -100,19 +99,17 @@ export default function ExploreScreen() {
   const cards = useMemo(() => {
     let result = visibleAllCards;
     if (filterGame !== 'all') result = result.filter(c => c.game === filterGame);
-    if (filterType === 'trade') result = result.filter(c => c.is_for_trade);
-    if (filterType === 'sale') result = result.filter(c => c.is_for_sale);
     if (search.trim()) result = result.filter(c => c.card_name.toLowerCase().includes(search.toLowerCase()));
     return result;
-  }, [visibleAllCards, filterGame, filterType, search]);
+  }, [visibleAllCards, filterGame, search]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Explorar</Text>
           <Text style={styles.subtitle}>
-            {allCards.filter(c => c.is_for_trade).length} para intercambio · {allCards.filter(c => c.is_for_sale).length} en venta
+            {allCards.length} carta{allCards.length !== 1 ? 's' : ''} publicada{allCards.length !== 1 ? 's' : ''}
           </Text>
         </View>
       </View>
@@ -132,8 +129,6 @@ export default function ExploreScreen() {
               uniqueGames={uniqueGames}
               filterGame={filterGame}
               setFilterGame={setFilterGame}
-              filterType={filterType}
-              setFilterType={setFilterType}
             />
           }
           renderItem={({ item }) => (
@@ -165,15 +160,13 @@ export default function ExploreScreen() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function ExploreHeader({
-  search, onSearchChange, uniqueGames, filterGame, setFilterGame, filterType, setFilterType,
+  search, onSearchChange, uniqueGames, filterGame, setFilterGame,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
   uniqueGames: Set<TCGGame>;
   filterGame: TCGGame | 'all';
   setFilterGame: (g: TCGGame | 'all') => void;
-  filterType: 'all' | 'trade' | 'sale';
-  setFilterType: (t: 'all' | 'trade' | 'sale') => void;
 }) {
   return (
     <>
@@ -189,29 +182,6 @@ function ExploreHeader({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filterRow}
       >
-        <TouchableOpacity
-          style={[styles.filterChip, filterType === 'all' && styles.filterChipActive]}
-          onPress={() => setFilterType('all')}
-        >
-          <Text style={[styles.filterChipText, filterType === 'all' && styles.filterChipTextActive]}>Todas</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterChip, filterType === 'trade' && styles.filterChipTrade]}
-          onPress={() => setFilterType('trade')}
-        >
-          <Ionicons name="swap-horizontal-outline" size={14} color={filterType === 'trade' ? '#0F172A' : '#3B82F6'} />
-          <Text style={[styles.filterChipText, filterType === 'trade' && styles.filterChipTextTrade]}>Intercambio</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterChip, filterType === 'sale' && styles.filterChipSale]}
-          onPress={() => setFilterType('sale')}
-        >
-          <Ionicons name="pricetag-outline" size={14} color={filterType === 'sale' ? '#0F172A' : '#4ADE80'} />
-          <Text style={[styles.filterChipText, filterType === 'sale' && styles.filterChipTextSale]}>Venta</Text>
-        </TouchableOpacity>
-        {uniqueGames.size > 1 && (
-          <View style={styles.filterDivider} />
-        )}
         {uniqueGames.size > 1 && (Array.from(uniqueGames) as TCGGame[]).map(g => (
           <TouchableOpacity
             key={g}
@@ -289,17 +259,15 @@ function CardDetailModal({ card, onClose, onPropose }: { card: ExploreCard | nul
               {card.set_name && <Text style={styles.modalSetName}>{card.set_name}</Text>}
 
               <View style={styles.modalBadges}>
-                {card.is_for_trade && (
-                  <View style={styles.badgeTrade}>
-                    <Ionicons name="swap-horizontal-outline" size={12} color="#3B82F6" />
-                    <Text style={styles.badgeTradeText}>Trade</Text>
-                  </View>
-                )}
-                {card.is_for_sale && (
-                  <View style={styles.badgeSale}>
-                    <Ionicons name="pricetag-outline" size={12} color="#4ADE80" />
-                    <Text style={styles.badgeSaleText}>
-                      {card.price_reference ? `$${card.price_reference}` : 'Venta'}
+                <View style={styles.badgePublished}>
+                  <Ionicons name="pricetag-outline" size={12} color="#4ADE80" />
+                  <Text style={styles.badgePublishedText}>Publicar</Text>
+                </View>
+                {card.price_reference != null && (
+                  <View style={styles.badgePrice}>
+                    <Ionicons name="wallet-outline" size={12} color="#4ADE80" />
+                    <Text style={styles.badgePriceText}>
+                      ${card.price_reference} {(card.price_reference_currency ?? 'usd').toUpperCase()}
                     </Text>
                   </View>
                 )}
@@ -348,7 +316,7 @@ function CardDetailModal({ card, onClose, onPropose }: { card: ExploreCard | nul
 
           <TouchableOpacity style={styles.proposeBtn} onPress={() => onPropose(card)}>
             <Ionicons name="people-outline" size={18} color="#fff" />
-            <Text style={styles.proposeBtnText}>Proponer encuentro</Text>
+            <Text style={styles.proposeBtnText}>Proponer intercambio</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -388,14 +356,9 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B',
   },
   filterChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  filterChipTrade: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-  filterChipSale: { backgroundColor: '#4ADE80', borderColor: '#4ADE80' },
   filterChipLogo: { width: 18, height: 18 },
   filterChipText: { color: '#64748B', fontSize: 13 },
   filterChipTextActive: { color: '#fff' },
-  filterChipTextTrade: { color: '#0F172A', fontWeight: '600' },
-  filterChipTextSale: { color: '#0F172A', fontWeight: '600' },
-  filterDivider: { width: 1, backgroundColor: '#334155', marginVertical: 4, marginHorizontal: 2 },
 
   thumb: {
     width: CARD_WIDTH, margin: 4, alignItems: 'center',
@@ -439,16 +402,16 @@ const styles = StyleSheet.create({
   modalCardName: { fontSize: 18, fontWeight: '800', color: '#F1F5F9', lineHeight: 22 },
   modalSetName: { fontSize: 12, color: '#64748B' },
   modalBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  badgeTrade: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#3B82F622', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
-  },
-  badgeTradeText: { color: '#3B82F6', fontSize: 12, fontWeight: '600' },
-  badgeSale: {
+  badgePublished: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#4ADE8022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
   },
-  badgeSaleText: { color: '#4ADE80', fontSize: 12, fontWeight: '600' },
+  badgePublishedText: { color: '#4ADE80', fontSize: 12, fontWeight: '600' },
+  badgePrice: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#4ADE8022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  badgePriceText: { color: '#4ADE80', fontSize: 12, fontWeight: '600' },
   badgeFoil: {
     backgroundColor: '#A78BFA22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
   },
