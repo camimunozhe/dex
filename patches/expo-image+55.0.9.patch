@@ -1,0 +1,26 @@
+diff --git a/node_modules/expo-image/ios/ContentPosition.swift b/node_modules/expo-image/ios/ContentPosition.swift
+index 73c34ca..905f068 100644
+--- a/node_modules/expo-image/ios/ContentPosition.swift
++++ b/node_modules/expo-image/ios/ContentPosition.swift
+@@ -10,7 +10,7 @@ typealias ContentPositionValue = Either<Double, String>
+  - Note: Its intention is to behave like the CSS [`object-position`](https://developer.mozilla.org/en-US/docs/Web/CSS/object-position) property.
+  */
+ struct ContentPosition: Record {
+-  static let center = Self()
++  nonisolated(unsafe) static let center = Self()
+ 
+   @Field
+   var top: ContentPositionValue?
+diff --git a/node_modules/expo-image/ios/ImageView.swift b/node_modules/expo-image/ios/ImageView.swift
+index 034b662..219279d 100644
+--- a/node_modules/expo-image/ios/ImageView.swift
++++ b/node_modules/expo-image/ios/ImageView.swift
+@@ -791,7 +791,7 @@ public final class ImageView: ExpoView {
+   // MARK: - Live Text Interaction
+ #if !os(tvOS)
+   @available(iOS 16.0, macCatalyst 17.0, *)
+-  static let imageAnalyzer = ImageAnalyzer.isSupported ? ImageAnalyzer() : nil
++  nonisolated(unsafe) static let imageAnalyzer = ImageAnalyzer.isSupported ? ImageAnalyzer() : nil
+ 
+   var enableLiveTextInteraction: Bool = false {
+     didSet {
