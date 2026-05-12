@@ -80,6 +80,8 @@ export interface Profile {
   collection_public: boolean;
   currency: Currency;
   enabled_games: TCGGame[];
+  regions: string[];
+  onboarding_completed: boolean;
   emergency_contacts: string[] | null;
   created_at: string;
   updated_at: string;

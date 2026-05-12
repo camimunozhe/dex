@@ -772,13 +772,23 @@ function CollectionHeader({
 }) {
   return (
     <>
-      <TextInput
-        style={styles.search}
-        value={search}
-        onChangeText={onSearchChange}
-        placeholder="Buscar carta..."
-        placeholderTextColor="#475569"
-      />
+      <View style={styles.searchWrap}>
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={onSearchChange}
+          placeholder="Buscar carta"
+          placeholderTextColor="#64748B"
+          allowFontScaling={false}
+          autoCorrect={false}
+        />
+        <Ionicons name="search" size={16} color="#64748B" style={styles.searchIcon} pointerEvents="none" />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => onSearchChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.searchClear}>
+            <Ionicons name="close-circle" size={16} color="#64748B" />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {!searching && (
       <View style={styles.foldersSection}>
@@ -1015,11 +1025,18 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   selAllText: { color: '#6366F1', fontSize: 14, fontWeight: '600' },
   selCancelText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  search: {
+  searchWrap: {
     marginBottom: 16,
     backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
-    borderRadius: 12, padding: 12, fontSize: 14, color: '#F1F5F9',
+    borderRadius: 12,
+    justifyContent: 'center',
   },
+  searchIcon: { position: 'absolute', left: 12 },
+  searchInput: {
+    fontSize: 14, color: '#F1F5F9',
+    paddingVertical: 10, paddingLeft: 36, paddingRight: 36,
+  },
+  searchClear: { position: 'absolute', right: 10 },
 
   foldersSection: { marginBottom: 12 },
   foldersSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

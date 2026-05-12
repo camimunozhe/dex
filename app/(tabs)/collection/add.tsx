@@ -3,7 +3,7 @@ import { requestCollectionRefresh } from '@/lib/collectionRefresh';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, FlatList,
-  ActivityIndicator, Switch, Dimensions,
+  ActivityIndicator, Switch, Dimensions, Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDialog } from '@/lib/AppDialog';
@@ -271,13 +271,13 @@ export default function AddCardScreen() {
           >
             {saveCtx.saving
               ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.headerSaveBtnText}>
+              : <Text style={styles.headerSaveBtnText} numberOfLines={1}>
                   {saveCtx.total === 0 ? 'Guardar' : `Guardar ${saveCtx.total}`}
                 </Text>
             }
           </TouchableOpacity>
         ) : (
-          <View style={{ width: 90 }} />
+          <View style={{ minWidth: 90 }} />
         )}
       </View>
 
@@ -541,6 +541,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
   const [condition, setCondition] = useState<CardCondition>('mint');
   const [language, setLanguage] = useState<CardLanguage>('en');
   const [saving, setSaving] = useState(false);
+  const [previewCard, setPreviewCard] = useState<PkmCard | null>(null);
   const saveRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -661,7 +662,7 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
           return (
             <TouchableOpacity
               style={[styles.thumb, qty > 0 && styles.thumbSelected]}
-              onPress={() => tapCard(item)}
+              onPress={() => setPreviewCard(item)}
               activeOpacity={0.7}
             >
               <Image source={{ uri: item.image_url }} style={styles.thumbImg} contentFit="contain" />
@@ -670,10 +671,17 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
                 <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
                 {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>{formatPrice(p, currency, usdToClp)}</Text> : null; })()}
               </View>
-              {qty > 0 && (
+              <View style={styles.zoomHint} pointerEvents="none">
+                <Ionicons name="expand-outline" size={12} color="#F1F5F9" />
+              </View>
+              {qty > 0 ? (
                 <TouchableOpacity style={styles.qtyBadge} onPress={() => removeCard(item.id)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
                   <Text style={styles.qtyText}>{qty}</Text>
                   <Ionicons name="close-circle" size={11} color="rgba(255,255,255,0.8)" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.addBadge} onPress={() => tapCard(item)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Ionicons name="add" size={16} color="#fff" />
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -681,6 +689,8 @@ function CardsInSetStep({ setId, game, userId, onSave, onCtxChange, resolveFolde
         }}
         contentContainerStyle={{ padding: 8, paddingBottom: 8 }}
       />
+
+      <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onAdd={(c) => { tapCard(c); setPreviewCard(null); }} qty={previewCard ? selected.get(previewCard.id)?.qty ?? 0 : 0} currency={currency} usdToClp={usdToClp} />
 
       {/* Bottom panel */}
       <View style={styles.setBottomPanel}>
@@ -736,6 +746,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
   const [condition, setCondition] = useState<CardCondition>('mint');
   const [language, setLanguage] = useState<CardLanguage>('en');
   const [saving, setSaving] = useState(false);
+  const [previewCard, setPreviewCard] = useState<PkmCard | null>(null);
   const saveRef = useRef<() => void>(() => {});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -837,7 +848,7 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
             return (
               <TouchableOpacity
                 style={[styles.thumb, qty > 0 && styles.thumbSelected]}
-                onPress={() => tapCard(item)}
+                onPress={() => setPreviewCard(item)}
                 activeOpacity={0.7}
               >
                 <Image source={{ uri: item.image_url }} style={styles.thumbImg} contentFit="contain" />
@@ -849,10 +860,17 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
                   <Text style={[styles.thumbNum, { flex: 1 }]} numberOfLines={1}>{item.set_name}</Text>
                   {(() => { const p = item.tcgplayer_normal_market ?? item.tcgplayer_foil_market; return p ? <Text style={styles.thumbPrice}>{formatPrice(p, currency, usdToClp)}</Text> : null; })()}
                 </View>
-                {qty > 0 && (
+                <View style={styles.zoomHint} pointerEvents="none">
+                  <Ionicons name="expand-outline" size={12} color="#F1F5F9" />
+                </View>
+                {qty > 0 ? (
                   <TouchableOpacity style={styles.qtyBadge} onPress={() => removeCard(item.id)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
                     <Text style={styles.qtyText}>{qty}</Text>
                     <Ionicons name="close-circle" size={11} color="rgba(255,255,255,0.8)" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.addBadge} onPress={() => tapCard(item)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                    <Ionicons name="add" size={16} color="#fff" />
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -904,7 +922,43 @@ function SearchNameStep({ game, userId, onSave, onCtxChange, resolveFolderId, cu
           </ScrollView>
         </View>
       </View>
+
+      <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onAdd={(c) => { tapCard(c); setPreviewCard(null); }} qty={previewCard ? selected.get(previewCard.id)?.qty ?? 0 : 0} currency={currency} usdToClp={usdToClp} />
     </View>
+  );
+}
+
+// ─── Card preview modal ───────────────────────────────────────────────────────
+
+function CardPreviewModal({ card, onClose, onAdd, qty, currency, usdToClp }: {
+  card: PkmCard | null;
+  onClose: () => void;
+  onAdd: (c: PkmCard) => void;
+  qty: number;
+  currency: import('@/types/database').Currency;
+  usdToClp: number;
+}) {
+  if (!card) return null;
+  const price = card.tcgplayer_normal_market ?? card.tcgplayer_foil_market;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.previewBackdrop} onPress={onClose}>
+        <Pressable style={styles.previewCardBox} onPress={() => {}}>
+          <Image
+            source={{ uri: card.image_url_large || card.image_url }}
+            style={styles.previewImageLarge}
+            contentFit="contain"
+          />
+          <Text style={styles.previewLabelName} numberOfLines={2}>{card.name}</Text>
+          <Text style={styles.previewLabelMeta}>{card.set_name} · #{card.number}</Text>
+          {price ? <Text style={styles.previewLabelPrice}>{formatPrice(price, currency, usdToClp)}</Text> : null}
+          <TouchableOpacity style={styles.previewAddBtn} onPress={() => onAdd(card)} activeOpacity={0.85}>
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.previewAddBtnText}>{qty > 0 ? `Agregar otra (${qty})` : 'Agregar a la selección'}</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1024,7 +1078,8 @@ const styles = StyleSheet.create({
   title: { flex: 1, color: '#F1F5F9', fontSize: 17, fontWeight: '700', textAlign: 'center' },
   headerSaveBtn: {
     backgroundColor: '#6366F1', borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 6, width: 90, alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 6, minWidth: 90, maxWidth: 140,
+    alignItems: 'center', justifyContent: 'center',
   },
   headerSaveBtnDisabled: { opacity: 0.4 },
   headerSaveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
@@ -1102,6 +1157,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3,
   },
   qtyText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  addBadge: {
+    position: 'absolute', top: 4, right: 4,
+    backgroundColor: 'rgba(99,102,241,0.92)',
+    borderRadius: 14, width: 26, height: 26,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  zoomHint: {
+    position: 'absolute', top: 4, left: 4,
+    backgroundColor: 'rgba(15,23,42,0.7)',
+    borderRadius: 10, width: 20, height: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Card preview modal
+  previewBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  previewCardBox: {
+    backgroundColor: '#1E293B', borderRadius: 16,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 16, gap: 8, alignItems: 'center',
+    maxWidth: 360, width: '100%',
+  },
+  previewImageLarge: {
+    width: 240, aspectRatio: 0.715, borderRadius: 10,
+  },
+  previewLabelName: {
+    color: '#F1F5F9', fontSize: 18, fontWeight: '800',
+    textAlign: 'center', marginTop: 8,
+  },
+  previewLabelMeta: { color: '#64748B', fontSize: 13 },
+  previewLabelPrice: { color: '#4ADE80', fontSize: 14, fontWeight: '700' },
+  previewAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#6366F1', borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 20,
+    marginTop: 8, alignSelf: 'stretch',
+  },
+  previewAddBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Set bottom panel
   setBottomPanel: {

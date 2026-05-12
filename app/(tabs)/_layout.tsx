@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -14,6 +14,7 @@ function TabIcon({ focused, label, icon }: { focused: boolean; label: string; ic
 }
 
 export default function TabsLayout() {
+  const router = useRouter();
   return (
     <Tabs
       screenOptions={{
@@ -46,6 +47,12 @@ export default function TabsLayout() {
             <TabIcon focused={focused} label="Intercambios" icon={focused ? 'swap-horizontal' : 'swap-horizontal-outline'} />
           ),
         }}
+        listeners={() => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            router.replace('/(tabs)/encuentros');
+          },
+        })}
       />
       <Tabs.Screen
         name="profile"

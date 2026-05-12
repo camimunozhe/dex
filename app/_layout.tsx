@@ -11,7 +11,7 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 
 function RootNavigator() {
-  const { session, loading, user } = useAuth();
+  const { session, loading, user, profile } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const [pendingMeetupId, setPendingMeetupId] = useState<string | null>(null);
@@ -22,13 +22,20 @@ function RootNavigator() {
   useEffect(() => {
     if (loading) return;
     const inAuthGroup = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === '(onboarding)';
 
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+    if (!session) {
+      if (!inAuthGroup) router.replace('/(auth)/login');
+      return;
+    }
+    if (!profile) return; // esperar a que cargue el perfil antes de decidir ruta
+
+    if (!profile.onboarding_completed && !inOnboarding) {
+      router.replace('/(onboarding)/welcome');
+    } else if (profile.onboarding_completed && (inAuthGroup || inOnboarding)) {
       router.replace('/(tabs)/collection');
     }
-  }, [session, loading, segments]);
+  }, [session, loading, segments, profile?.onboarding_completed]);
 
   useEffect(() => {
     if (!handledColdStart.current) {
@@ -55,6 +62,7 @@ function RootNavigator() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0F172A' } }}>
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(onboarding)" />
       <Stack.Screen name="(tabs)" />
     </Stack>
   );

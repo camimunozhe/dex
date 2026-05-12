@@ -1,31 +1,39 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { GAME_DISPLAY_NAMES, resolveEnabledGames } from '@/lib/enabledGames';
-import type { TCGGame } from '@/types/database';
+import { useDialog } from '@/lib/AppDialog';
+import { CHILE_REGIONS } from '@/lib/regions';
 
-export default function GamesScreen() {
+export default function RegionsScreen() {
   const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
+  const dialog = useDialog();
+  const [selected, setSelected] = useState<Set<string>>(new Set(profile?.regions ?? []));
   const [saving, setSaving] = useState(false);
 
-  const enabled = resolveEnabledGames(profile?.enabled_games);
-
-  async function toggle(game: TCGGame) {
+  async function toggle(code: string) {
     if (saving) return;
-    const next = enabled.includes(game) ? enabled.filter(g => g !== game) : [...enabled, game];
-    if (next.length === 0) {
-      Alert.alert('Selecciona al menos uno', 'Necesitas tener al menos un juego habilitado.');
+    const next = new Set(selected);
+    next.has(code) ? next.delete(code) : next.add(code);
+    if (next.size === 0) {
+      dialog.alert({
+        title: 'Selecciona al menos una',
+        message: 'Necesitas mantener al menos una región para poder hacer intercambios.',
+      });
       return;
     }
+    setSelected(next);
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({ enabled_games: next }).eq('id', user!.id);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ regions: Array.from(next) })
+      .eq('id', user!.id);
     if (error) {
-      Alert.alert('No se pudo guardar', error.message);
+      dialog.alert({ title: 'No se pudo guardar', message: error.message });
       setSaving(false);
       return;
     }
@@ -40,28 +48,26 @@ export default function GamesScreen() {
           <Ionicons name="chevron-back" size={20} color="#6366F1" />
           <Text style={styles.back}>Perfil</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Juegos</Text>
+        <Text style={styles.title}>Regiones</Text>
         <View style={{ width: 60 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.intro}>
-          Elegí los juegos que coleccionás. Solo se muestran en tu colección, en explorar y al agregar cartas. Podés cambiarlo cuando quieras — no se borra ningún dato.
+          Regiones donde puedes hacer intercambios. Esto ayuda a conectar con coleccionistas cercanos.
         </Text>
 
-        {(['pokemon', 'magic'] as TCGGame[]).map(g => {
-          const isOn = enabled.includes(g);
+        {CHILE_REGIONS.map(r => {
+          const isOn = selected.has(r.code);
           return (
             <TouchableOpacity
-              key={g}
+              key={r.code}
               style={[styles.row, isOn && styles.rowActive]}
-              onPress={() => toggle(g)}
+              onPress={() => toggle(r.code)}
               disabled={saving}
               activeOpacity={0.7}
             >
-              <Text style={[styles.rowLabel, isOn && styles.rowLabelActive]}>
-                {GAME_DISPLAY_NAMES[g]}
-              </Text>
+              <Text style={[styles.rowLabel, isOn && styles.rowLabelActive]}>{r.label}</Text>
               {isOn && <Ionicons name="checkmark-circle" size={22} color="#6366F1" />}
             </TouchableOpacity>
           );
@@ -79,16 +85,14 @@ const styles = StyleSheet.create({
   },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 60 },
   back: { color: '#6366F1', fontSize: 15 },
-  title: { color: '#F1F5F9', fontSize: 17, fontWeight: '700' },
-  scroll: { padding: 16, gap: 8 },
-  intro: { color: '#64748B', fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  title: { color: '#F1F5F9', fontSize: 16, fontWeight: '700' },
+  scroll: { padding: 20, gap: 8 },
+  intro: { color: '#94A3B8', fontSize: 13, lineHeight: 19, marginBottom: 12 },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#1E293B', borderRadius: 12,
-    borderWidth: 1, borderColor: '#334155',
-    paddingHorizontal: 16, paddingVertical: 14,
+    padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B',
   },
-  rowActive: { borderColor: '#6366F1' },
-  rowLabel: { color: '#94A3B8', fontSize: 15, fontWeight: '600' },
-  rowLabelActive: { color: '#F1F5F9' },
+  rowActive: { borderColor: '#6366F1', backgroundColor: '#6366F122' },
+  rowLabel: { color: '#F1F5F9', fontSize: 15, fontWeight: '600' },
+  rowLabelActive: { color: '#A5B4FC' },
 });

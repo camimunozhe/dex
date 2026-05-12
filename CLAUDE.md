@@ -1,6 +1,11 @@
-# Trocora App — Contexto para Claude
+# Trocora App — Contexto del proyecto
 
 App móvil de intercambio y compraventa de cartas de TCG (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Digimon, Lorcana). Solo móvil — no hay versión web activa.
+
+## Reglas del agente
+
+- **No mencionar al asistente en ningún lado.** En commits, código, comentarios, PRs y mensajes al usuario no incluir frases como "Co-Authored-By: Claude", "Generated with Claude", ni referencias similares. Los commits van firmados solo por el autor humano.
+- **No hacer push a git ni publicar updates / builds sin instrucción explícita.** Eso incluye `git push`, `eas update`, `eas build`, `eas submit`, `npm publish`, deploys de edge functions a producción, y cualquier otra acción que afecte usuarios reales o repositorios remotos. Preparar el commit local está bien; publicarlo no, hasta que el usuario lo pida.
 
 ## Stack
 

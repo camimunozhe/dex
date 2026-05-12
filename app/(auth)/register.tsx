@@ -11,6 +11,8 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'form' | 'verify'>('form');
   const [loading, setLoading] = useState(false);
 
   async function handleRegister() {
@@ -25,16 +27,44 @@ export default function RegisterScreen() {
 
     setLoading(true);
     const { error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
-      options: { data: { username } },
+      options: { data: { username: username.trim() } },
     });
-    if (error) Alert.alert('Error', error.message);
-    else Alert.alert(
-      'Cuenta creada',
-      'Revisa tu email para confirmar tu cuenta.',
-    );
     setLoading(false);
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+    setStep('verify');
+  }
+
+  async function handleVerify() {
+    const token = code.trim();
+    if (token.length !== 6) {
+      Alert.alert('Código inválido', 'Ingresa el código de 6 dígitos que recibiste por email.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token,
+      type: 'signup',
+    });
+    setLoading(false);
+    if (error) {
+      Alert.alert('Código incorrecto', error.message);
+      return;
+    }
+    // Sesión queda establecida; el RootNavigator redirige a onboarding.
+  }
+
+  async function handleResend() {
+    setLoading(true);
+    const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim() });
+    setLoading(false);
+    if (error) Alert.alert('Error', error.message);
+    else Alert.alert('Código reenviado', 'Revisa tu correo en unos minutos.');
   }
 
   return (
@@ -45,66 +75,99 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Image source={require('../../assets/icon.png')} style={styles.logo} />
-          <Text style={styles.title}>Crear cuenta</Text>
-          <Text style={styles.subtitle}>Únete a la comunidad TCG segura</Text>
+          <Text style={styles.title}>{step === 'form' ? 'Crear cuenta' : 'Verifica tu email'}</Text>
+          <Text style={styles.subtitle}>
+            {step === 'form'
+              ? 'Únete a la comunidad TCG'
+              : `Te enviamos un código de 6 dígitos a ${email}`}
+          </Text>
         </View>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>Username</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder="trainer123"
-            placeholderTextColor="#475569"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+        {step === 'form' ? (
+          <View style={styles.form}>
+            <Text style={styles.label}>Nombre de usuario</Text>
+            <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="trainer123"
+              placeholderTextColor="#475569"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="tu@email.com"
-            placeholderTextColor="#475569"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="tu@email.com"
+              placeholderTextColor="#475569"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
-          <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Mínimo 6 caracteres"
-            placeholderTextColor="#475569"
-            secureTextEntry
-          />
+            <Text style={styles.label}>Contraseña</Text>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Mínimo 6 caracteres"
+              placeholderTextColor="#475569"
+              secureTextEntry
+            />
 
-          <View style={styles.infoBox}>
-            <Ionicons name="lock-closed-outline" size={14} color="#93C5FD" style={styles.infoIcon} />
-            <Text style={styles.infoText}>
-              Para agendar intercambios necesitarás verificar tu identidad (nivel intermedio).
-            </Text>
+            <TouchableOpacity
+              style={[styles.btn, loading && styles.btnDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              <Text style={styles.btnText}>{loading ? 'Creando cuenta...' : 'Crear cuenta'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.loginRow}>
+              <Text style={styles.loginText}>¿Ya tienes cuenta? </Text>
+              <Link href="/(auth)/login">
+                <Text style={styles.loginLink}>Inicia sesión</Text>
+              </Link>
+            </View>
           </View>
+        ) : (
+          <View style={styles.form}>
+            <Text style={styles.label}>Código de verificación</Text>
+            <TextInput
+              style={[styles.input, styles.codeInput]}
+              value={code}
+              onChangeText={setCode}
+              placeholder="000000"
+              placeholderTextColor="#475569"
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+            />
 
-          <TouchableOpacity
-            style={[styles.btn, loading && styles.btnDisabled]}
-            onPress={handleRegister}
-            disabled={loading}
-          >
-            <Text style={styles.btnText}>{loading ? 'Creando cuenta...' : 'Crear cuenta'}</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btn, loading && styles.btnDisabled]}
+              onPress={handleVerify}
+              disabled={loading}
+            >
+              <Text style={styles.btnText}>{loading ? 'Verificando...' : 'Verificar'}</Text>
+            </TouchableOpacity>
 
-          <View style={styles.loginRow}>
-            <Text style={styles.loginText}>¿Ya tienes cuenta? </Text>
-            <Link href="/(auth)/login">
-              <Text style={styles.loginLink}>Inicia sesión</Text>
-            </Link>
+            <View style={styles.resendRow}>
+              <Text style={styles.loginText}>¿No te llegó? </Text>
+              <TouchableOpacity onPress={handleResend} disabled={loading}>
+                <Text style={styles.loginLink}>Reenviar código</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={() => setStep('form')} style={styles.backLinkRow}>
+              <Ionicons name="chevron-back" size={14} color="#94A3B8" />
+              <Text style={styles.backLink}>Volver</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -128,17 +191,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#F1F5F9',
   },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#1E3A5F',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 16,
+  codeInput: {
+    fontSize: 24, letterSpacing: 8, textAlign: 'center', fontWeight: '700',
   },
-  infoIcon: { marginTop: 2 },
-  infoText: { color: '#93C5FD', fontSize: 13, lineHeight: 18, flex: 1 },
+  resendRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
+  backLinkRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 2, marginTop: 20,
+  },
+  backLink: { color: '#94A3B8', fontSize: 13 },
   btn: {
     backgroundColor: '#6366F1',
     borderRadius: 12,

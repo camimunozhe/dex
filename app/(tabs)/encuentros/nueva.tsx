@@ -106,7 +106,7 @@ export default function NuevaPropuestaScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)/meetups')}>
           <Text style={styles.back}>← Volver</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Nuevo intercambio</Text>
