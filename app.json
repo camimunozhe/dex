@@ -59,7 +59,8 @@
         {
           "color": "#6366F1"
         }
-      ]
+      ],
+      "./plugins/with-swift-strict-concurrency-minimal"
     ],
     "extra": {
       "router": {},
