@@ -11,6 +11,8 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { usePremium } from '@/lib/usePremium';
+import { assertCanPublish } from '@/lib/publishGate';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
@@ -41,6 +43,7 @@ const GAME_ICON: Record<TCGGame, { name: IoniconName; color: string }> = {
 export default function FolderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, profile, loading: authLoading } = useAuth();
+  const { isPremium } = usePremium();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const dialog = useDialog();
@@ -217,6 +220,17 @@ export default function FolderDetailScreen() {
     const ids = Array.from(selectedCards);
     const selectedList = cards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
+    if (field === 'is_published' && newValue && user) {
+      const willPublish = selectedList.filter(c => !c.is_published).length;
+      const ok = await assertCanPublish({
+        userId: user.id,
+        isPremium,
+        addCount: willPublish,
+        dialog,
+        onUpgrade: () => router.push('/paywall'),
+      });
+      if (!ok) return;
+    }
     await supabase.from('cards_collection').update({ [field]: newValue }).in('id', ids);
     setCards(prev => prev.map(c => selectedCards.has(c.id) ? { ...c, [field]: newValue } : c));
     ids.forEach(cardId => patchCollectionCard(cardId, { [field]: newValue }));

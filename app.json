@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trocora",
     "slug": "trocora-app",
-    "version": "1.0.3",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,6 +19,7 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Para subir fotos de cartas",
         "NSLocationWhenInUseUsageDescription": "Para sugerir zonas seguras cercanas",
+        "NSUserTrackingUsageDescription": "Trocora usa estos datos para validar suscripciones y prevenir fraude.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -66,6 +67,10 @@
       "router": {},
       "eas": {
         "projectId": "960bb013-816a-4aa1-8559-16b7cdac6842"
+      },
+      "revenuecat": {
+        "ios": "test_xhFAGCpqdonmUzOpszcDXdbmClO",
+        "android": "test_xhFAGCpqdonmUzOpszcDXdbmClO"
       }
     },
     "runtimeVersion": {

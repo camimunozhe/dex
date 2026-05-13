@@ -83,6 +83,10 @@ export interface Profile {
   regions: string[];
   onboarding_completed: boolean;
   emergency_contacts: string[] | null;
+  premium_status: 'free' | 'active' | 'in_grace' | 'expired';
+  premium_until: string | null;
+  premium_product_id: string | null;
+  premium_platform: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,6 +104,8 @@ export interface CardCollection {
   is_for_trade: boolean;
   is_for_sale: boolean;
   is_published: boolean;
+  is_boosted: boolean;
+  custom_photos: string[];
   price_reference: number | null;
   price_reference_currency: Currency;
   notes: string | null;

@@ -12,6 +12,11 @@ import { requestCollectionRefresh, patchCollectionCard, removeCollectionCard } f
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { usePremium } from '@/lib/usePremium';
+import { assertCanPublish } from '@/lib/publishGate';
+import { uploadCardPhoto, deleteCardPhoto, MAX_CUSTOM_PHOTOS } from '@/lib/cardPhotos';
+import { PhotoLightbox } from '@/lib/PhotoLightbox';
+import * as ImagePicker from 'expo-image-picker';
 import type { CardCollection, CollectionFolder, TCGGame, CardLanguage } from '@/types/database';
 import { formatPrice, currencyLabel, convertCurrency } from '@/lib/currency';
 import { getUsdToClp } from '@/lib/exchangeRate';
@@ -64,6 +69,7 @@ const LANGUAGES: { value: CardLanguage; label: string }[] = [
 export default function CardDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, profile, loading: authLoading } = useAuth();
+  const { isPremium } = usePremium();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const dialog = useDialog();
@@ -142,7 +148,35 @@ export default function CardDetailScreen() {
     });
   }
 
+  async function toggleBoost() {
+    if (!card) return;
+    if (!isPremium) {
+      dialog.confirm({
+        title: 'Boost es Pro',
+        message: 'Con Trocora Pro tus publicaciones aparecen primero en Explorar.',
+        confirmText: 'Pasarme a Pro',
+        cancelText: 'Más tarde',
+        onConfirm: () => router.push('/paywall'),
+      });
+      return;
+    }
+    const newValue = !card.is_boosted;
+    await supabase.from('cards_collection').update({ is_boosted: newValue }).eq('id', id);
+    setCard(c => c ? { ...c, is_boosted: newValue } : c);
+    patchCollectionCard(id, { is_boosted: newValue });
+  }
+
   async function toggleField(field: 'is_published', value: boolean) {
+    if (field === 'is_published' && value && user) {
+      const ok = await assertCanPublish({
+        userId: user.id,
+        isPremium,
+        addCount: 1,
+        dialog,
+        onUpgrade: () => router.push('/paywall'),
+      });
+      if (!ok) return;
+    }
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', id);
     setCard(c => c ? { ...c, [field]: value } : c);
     patchCollectionCard(id, { [field]: value });
@@ -374,7 +408,7 @@ export default function CardDetailScreen() {
               trackColor={{ true: '#3B82F6' }}
             />
           </View>
-          <View style={[styles.switchRow, styles.switchRowLast]}>
+          <View style={[styles.switchRow, card.is_published ? null : styles.switchRowLast]}>
             <View style={styles.switchLabelRow}>
               <Ionicons name="pricetag-outline" size={16} color="#4ADE80" />
               <Text style={styles.switchLabel}>Publicar</Text>
@@ -385,7 +419,44 @@ export default function CardDetailScreen() {
               trackColor={{ true: '#6366F1' }}
             />
           </View>
+          {card.is_published && (
+            <TouchableOpacity
+              style={[styles.switchRow, styles.switchRowLast]}
+              onPress={toggleBoost}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.switchLabelRow, { flex: 1, marginRight: 12 }]}>
+                <Ionicons name="rocket" size={16} color="#FACC15" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.switchLabel}>Boost en Explorar</Text>
+                  <Text style={styles.switchHint} numberOfLines={2}>
+                    {isPremium
+                      ? 'Tu carta aparece primero en la grilla'
+                      : 'Función Pro · aparece primero en Explorar'}
+                  </Text>
+                </View>
+              </View>
+              {isPremium ? (
+                <Switch
+                  value={card.is_boosted}
+                  onValueChange={() => toggleBoost()}
+                  trackColor={{ true: '#FACC15' }}
+                />
+              ) : (
+                <View style={styles.proLock}>
+                  <Ionicons name="star" size={11} color="#FACC15" />
+                  <Text style={styles.proLockText}>Pro</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
+
+        <CardPhotosSection
+          card={card}
+          isPremium={isPremium}
+          onChange={(photos) => setCard(c => c ? { ...c, custom_photos: photos } : c)}
+        />
 
         {card.notes && (
           <View style={styles.notes}>
@@ -483,6 +554,161 @@ export default function CardDetailScreen() {
   );
 }
 
+function CardPhotosSection({
+  card, isPremium, onChange,
+}: {
+  card: CardCollection;
+  isPremium: boolean;
+  onChange: (photos: string[]) => void;
+}) {
+  const router = useRouter();
+  const dialog = useDialog();
+  const [uploading, setUploading] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const photos = card.custom_photos ?? [];
+
+  async function addPhoto() {
+    if (!isPremium) {
+      dialog.confirm({
+        title: 'Fotos propias son Pro',
+        message: 'Con Trocora Pro podés subir hasta 5 fotos reales de tu carta para mostrar su estado.',
+        confirmText: 'Pasarme a Pro',
+        cancelText: 'Más tarde',
+        onConfirm: () => router.push('/paywall'),
+      });
+      return;
+    }
+    if (photos.length >= MAX_CUSTOM_PHOTOS) {
+      dialog.alert({ title: 'Máximo alcanzado', message: `Podés subir hasta ${MAX_CUSTOM_PHOTOS} fotos por carta.` });
+      return;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      dialog.alert({ title: 'Permiso requerido', message: 'Necesitamos acceso a tu galería.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploading(true);
+    const asset = result.assets[0];
+    const res = await uploadCardPhoto({ userId: card.user_id, cardId: card.id, uri: asset.uri });
+    if ('error' in res) {
+      setUploading(false);
+      dialog.alert({ title: 'Error', message: res.error });
+      return;
+    }
+    const next = [...photos, res.url];
+    const { error: upErr } = await supabase
+      .from('cards_collection')
+      .update({ custom_photos: next })
+      .eq('id', card.id);
+    setUploading(false);
+    if (upErr) { dialog.alert({ title: 'Error', message: upErr.message }); return; }
+    onChange(next);
+  }
+
+  function confirmDelete(index: number) {
+    dialog.confirm({
+      title: 'Eliminar foto',
+      message: '¿Borrar esta foto?',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: () => deletePhotoAt(index),
+    });
+  }
+
+  async function deletePhotoAt(index: number) {
+    const url = photos[index];
+    if (!url) return;
+    const next = photos.filter((_, i) => i !== index);
+    const { error: upErr } = await supabase
+      .from('cards_collection')
+      .update({ custom_photos: next })
+      .eq('id', card.id);
+    if (upErr) { dialog.alert({ title: 'Error', message: upErr.message }); return; }
+    onChange(next);
+    void deleteCardPhoto(url);
+  }
+
+  // Hide entirely for free users with no photos (they don't even know it exists,
+  // unless they're publishing — show the CTA when published).
+  if (!isPremium && photos.length === 0 && !card.is_published) return null;
+
+  return (
+    <View style={styles.photosSection}>
+      <View style={styles.photosHeader}>
+        <Text style={styles.photosTitle}>
+          Fotos propias {photos.length > 0 ? `(${photos.length}/${MAX_CUSTOM_PHOTOS})` : ''}
+        </Text>
+        {!isPremium && photos.length === 0 && (
+          <View style={styles.proLock}>
+            <Ionicons name="star" size={11} color="#FACC15" />
+            <Text style={styles.proLockText}>Pro</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.photosHint}>
+        {photos.length === 0
+          ? isPremium
+            ? 'Mostrá el estado real de tu carta con fotos propias.'
+            : 'Función Pro · subí fotos reales para generar más confianza.'
+          : 'Toca una foto para ampliarla. Mantenelas actualizadas.'}
+      </Text>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosScroll}>
+        {photos.map((url, i) => (
+          <TouchableOpacity
+            key={`${url}-${i}`}
+            style={styles.photoTile}
+            onPress={() => setLightboxIndex(i)}
+            onLongPress={() => confirmDelete(i)}
+            activeOpacity={0.85}
+          >
+            <Image source={{ uri: url }} style={styles.photoImg} contentFit="cover" />
+            <TouchableOpacity
+              style={styles.photoDelete}
+              onPress={() => confirmDelete(i)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="close-circle" size={20} color="#fff" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
+        {photos.length < MAX_CUSTOM_PHOTOS && (
+          <TouchableOpacity
+            style={[styles.photoTile, styles.photoAdd]}
+            onPress={addPhoto}
+            disabled={uploading}
+            activeOpacity={0.7}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#94A3B8" />
+            ) : (
+              <>
+                <Ionicons name="camera-outline" size={28} color="#94A3B8" />
+                <Text style={styles.photoAddText}>Agregar</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+
+      <PhotoLightbox
+        visible={lightboxIndex !== null}
+        photos={photos}
+        initialIndex={lightboxIndex ?? 0}
+        onClose={() => setLightboxIndex(null)}
+      />
+    </View>
+  );
+}
+
 function DetailRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <View style={styles.detailRow}>
@@ -572,6 +798,40 @@ const styles = StyleSheet.create({
   switchRowLast: { borderBottomWidth: 0 },
   switchLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   switchLabel: { color: '#F1F5F9', fontSize: 14 },
+  switchHint: { color: '#64748B', fontSize: 11, marginTop: 2 },
+
+  photosSection: {
+    marginHorizontal: 16, marginBottom: 16,
+    backgroundColor: '#1E293B', borderRadius: 12,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 14,
+  },
+  photosHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  photosTitle: { color: '#F1F5F9', fontSize: 14, fontWeight: '700' },
+  photosHint: { color: '#64748B', fontSize: 12, marginTop: 4, lineHeight: 17 },
+  photosScroll: { gap: 8, paddingTop: 12 },
+  photoTile: {
+    width: 100, height: 100, borderRadius: 10,
+    backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155',
+    overflow: 'hidden', position: 'relative',
+  },
+  photoImg: { width: '100%', height: '100%' },
+  photoDelete: {
+    position: 'absolute', top: 4, right: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12,
+  },
+  photoAdd: {
+    alignItems: 'center', justifyContent: 'center',
+    borderStyle: 'dashed',
+  },
+  photoAddText: { color: '#94A3B8', fontSize: 11, marginTop: 4, fontWeight: '600' },
+  proLock: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(250,204,21,0.12)',
+    borderWidth: 1, borderColor: 'rgba(250,204,21,0.5)',
+    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  proLockText: { color: '#FACC15', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   notes: { margin: 16, backgroundColor: '#1E293B', borderRadius: 12, padding: 14 },
   notesLabel: { color: '#64748B', fontSize: 12, fontWeight: '600', marginBottom: 6 },
   notesText: { color: '#F1F5F9', fontSize: 14 },

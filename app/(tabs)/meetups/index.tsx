@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo, useRef } from 'react';
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
@@ -10,8 +10,13 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import type { CardCollection, TCGGame } from '@/types/database';
+import { usePremium } from '@/lib/usePremium';
+import { useDialog } from '@/lib/AppDialog';
+import type { CardCollection, TCGGame, CardCondition } from '@/types/database';
 import { availabilityBorder } from '@/lib/cardStyle';
+import { ProBadge } from '@/lib/ProBadge';
+import { PhotoLightbox } from '@/lib/PhotoLightbox';
+import { addToWatchlist, removeFromWatchlist, isInWatchlist } from '@/lib/watchlist';
 import { resolveEnabledGames } from '@/lib/enabledGames';
 import { REGION_LABEL } from '@/lib/regions';
 
@@ -45,17 +50,25 @@ const GAME_LOGO: Partial<Record<TCGGame, ReturnType<typeof require>>> = {
 };
 
 const CONDITION_LABELS: Record<string, string> = {
-  mint: 'Mint',
-  near_mint: 'Near Mint',
-  excellent: 'Excellent',
-  good: 'Good',
-  played: 'Played',
-  poor: 'Poor',
+  mint: 'Nueva',
+  near_mint: 'Casi nueva',
+  excellent: 'Excelente',
+  good: 'Buena',
+  played: 'Jugada',
+  poor: 'Dañada',
 };
 
 type ExploreCard = CardCollection & {
-  profiles: { username: string; avatar_url: string | null; regions: string[] | null } | null;
+  profiles: { username: string; avatar_url: string | null; regions: string[] | null; created_at: string | null; premium_status: string | null } | null;
 };
+
+function memberSince(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const month = d.toLocaleDateString('es', { month: 'short' }).replace('.', '');
+  return `Miembro desde ${month} ${d.getFullYear()}`;
+}
 
 type CardGroup = {
   key: string;
@@ -75,9 +88,31 @@ function groupKey(c: ExploreCard): string {
   return `${c.game}|${c.set_name ?? ''}|${c.card_number ?? ''}|${c.card_name}|${c.is_foil ? 'foil' : 'reg'}`;
 }
 
+type AdvancedFilters = {
+  conditions: Set<CardCondition>;
+  foilOnly: boolean;
+  setName: string;
+};
+
+const EMPTY_FILTERS: AdvancedFilters = {
+  conditions: new Set(),
+  foilOnly: false,
+  setName: '',
+};
+
+function activeFilterCount(f: AdvancedFilters): number {
+  let n = 0;
+  if (f.conditions.size > 0) n += 1;
+  if (f.foilOnly) n += 1;
+  if (f.setName.trim()) n += 1;
+  return n;
+}
+
 export default function ExploreScreen() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const dialog = useDialog();
+  const { isPremium } = usePremium();
   const [allCards, setAllCards] = useState<ExploreCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -85,13 +120,15 @@ export default function ExploreScreen() {
   const [onlyMyRegions, setOnlyMyRegions] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<CardGroup | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<AdvancedFilters>(EMPTY_FILTERS);
   const isFirstMount = useRef(true);
 
   const fetchCards = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from('cards_collection')
-      .select('*, profiles!inner(username, avatar_url, regions)')
+      .select('*, profiles!inner(username, avatar_url, regions, created_at, premium_status)')
       .eq('is_published', true)
       .neq('user_id', user.id)
       .order('created_at', { ascending: false });
@@ -142,9 +179,14 @@ export default function ExploreScreen() {
       (c.profiles?.regions ?? []).forEach(r => g.regionSet.add(r));
       if (!g.image_url && c.image_url) g.image_url = c.image_url;
     }
+    // Inside each group, boosted listings appear first, then by recency.
     for (const g of map.values()) {
-      g.listings.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      g.listings.sort((a, b) => {
+        if (!!a.is_boosted !== !!b.is_boosted) return b.is_boosted ? 1 : -1;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
     }
+    // Group position: only recency (no boost effect to avoid free piggyback).
     return Array.from(map.values()).sort(
       (a, b) =>
         new Date(b.listings[0].created_at).getTime() -
@@ -164,8 +206,26 @@ export default function ExploreScreen() {
       const q = search.toLowerCase();
       result = result.filter(g => g.card_name.toLowerCase().includes(q));
     }
+    // Advanced filters (Pro). For non-premium they stay empty so they are no-ops.
+    if (isPremium) {
+      const setQ = filters.setName.trim().toLowerCase();
+      if (filters.conditions.size > 0 || filters.foilOnly || setQ) {
+        result = result
+          .map(g => {
+            const listings = g.listings.filter(l => {
+              if (filters.foilOnly && !l.is_foil) return false;
+              if (filters.conditions.size > 0 && !filters.conditions.has(l.condition)) return false;
+              if (setQ && !(l.set_name ?? '').toLowerCase().includes(setQ)) return false;
+              return true;
+            });
+            if (listings.length === 0) return null;
+            return { ...g, listings };
+          })
+          .filter((g): g is CardGroup => g !== null);
+      }
+    }
     return result;
-  }, [grouped, filterGame, onlyMyRegions, myRegions, search]);
+  }, [grouped, filterGame, onlyMyRegions, myRegions, search, isPremium, filters]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -196,6 +256,21 @@ export default function ExploreScreen() {
               onlyMyRegions={onlyMyRegions}
               setOnlyMyRegions={setOnlyMyRegions}
               hasRegions={myRegions.size > 0}
+              filterCount={activeFilterCount(filters)}
+              onOpenFilters={() => {
+                if (!isPremium) {
+                  dialog.confirm({
+                    title: 'Filtros avanzados son Pro',
+                    message: 'Filtrá por precio, condición, foil y set con Trocora Pro.',
+                    confirmText: 'Pasarme a Pro',
+                    cancelText: 'Más tarde',
+                    onConfirm: () => router.push('/paywall'),
+                  });
+                  return;
+                }
+                setShowFilters(true);
+              }}
+              onClearFilters={() => setFilters(EMPTY_FILTERS)}
             />
           }
           renderItem={({ item }) => (
@@ -216,10 +291,18 @@ export default function ExploreScreen() {
         onPropose={(listing) => {
           setSelectedGroup(null);
           router.push({
-            pathname: '/(tabs)/encuentros/nueva',
+            pathname: '/intercambio/nueva',
             params: { receiver_id: listing.user_id, card_id: listing.id },
           });
         }}
+      />
+
+      <AdvancedFiltersModal
+        visible={showFilters}
+        filters={filters}
+        onChange={setFilters}
+        onClear={() => setFilters(EMPTY_FILTERS)}
+        onClose={() => setShowFilters(false)}
       />
     </SafeAreaView>
   );
@@ -230,6 +313,7 @@ export default function ExploreScreen() {
 function ExploreHeader({
   search, onSearchChange, uniqueGames, filterGame, setFilterGame,
   onlyMyRegions, setOnlyMyRegions, hasRegions,
+  filterCount, onOpenFilters, onClearFilters,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -239,16 +323,41 @@ function ExploreHeader({
   onlyMyRegions: boolean;
   setOnlyMyRegions: (v: boolean) => void;
   hasRegions: boolean;
+  filterCount: number;
+  onOpenFilters: () => void;
+  onClearFilters: () => void;
 }) {
   return (
     <>
-      <TextInput
-        style={styles.searchInput}
-        value={search}
-        onChangeText={onSearchChange}
-        placeholder="Buscar carta..."
-        placeholderTextColor="#475569"
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          style={[styles.searchInput, { flex: 1 }]}
+          value={search}
+          onChangeText={onSearchChange}
+          placeholder="Buscar carta..."
+          placeholderTextColor="#475569"
+        />
+        <TouchableOpacity
+          style={[styles.filtersBtn, filterCount > 0 && styles.filtersBtnActive]}
+          onPress={onOpenFilters}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="options-outline" size={18} color={filterCount > 0 ? '#0F172A' : '#A5B4FC'} />
+          {filterCount > 0 && (
+            <View style={styles.filterCountBadge}>
+              <Text style={styles.filterCountBadgeText}>{filterCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {filterCount > 0 && (
+        <TouchableOpacity onPress={onClearFilters} style={styles.clearFiltersRow}>
+          <Ionicons name="close-circle" size={14} color="#94A3B8" />
+          <Text style={styles.clearFiltersText}>Limpiar filtros ({filterCount})</Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -316,8 +425,86 @@ function CardItem({ group, onPress }: { group: CardGroup; onPress: () => void })
 // ─── Card detail modal ────────────────────────────────────────────────────────
 
 function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: CardGroup | null; myRegions: Set<string>; onClose: () => void; onPropose: (listing: ExploreCard) => void }) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const { isPremium } = usePremium();
+  const dialog = useDialog();
+  const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
+  const [watching, setWatching] = useState(false);
+  const [watchingId, setWatchingId] = useState<string | null>(null);
+  const [watchBusy, setWatchBusy] = useState(false);
+
+  const sample = group?.listings[0];
+  const catalogCardId = sample?.pokemon_card_id ?? sample?.magic_card_id ?? null;
+
+  useEffect(() => {
+    if (!group || !user || !catalogCardId) {
+      setWatching(false);
+      setWatchingId(null);
+      return;
+    }
+    (async () => {
+      const has = await isInWatchlist(user.id, group.game, catalogCardId);
+      setWatching(has);
+      if (has) {
+        const col = group.game === 'pokemon' ? 'pokemon_card_id' : 'magic_card_id';
+        const { data } = await supabase
+          .from('card_watchlist')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq(col, catalogCardId)
+          .maybeSingle();
+        setWatchingId((data as any)?.id ?? null);
+      } else {
+        setWatchingId(null);
+      }
+    })();
+  }, [group?.key, user?.id, catalogCardId]);
+
   if (!group) return null;
   const gameIcon = GAME_ICON[group.game];
+  const gameLogo = GAME_LOGO[group.game];
+
+  function openUserProfile(userId: string) {
+    onClose();
+    router.push({ pathname: '/user/[id]', params: { id: userId } });
+  }
+
+  async function toggleWatchlist() {
+    if (!user || !group || !catalogCardId) return;
+    if (!isPremium) {
+      onClose();
+      dialog.confirm({
+        title: 'Watchlist es Pro',
+        message: 'Recibí push cuando alguien publique esta carta. Disponible con Trocora Pro.',
+        confirmText: 'Pasarme a Pro',
+        cancelText: 'Más tarde',
+        onConfirm: () => router.push('/paywall'),
+      });
+      return;
+    }
+    setWatchBusy(true);
+    if (watching && watchingId) {
+      await removeFromWatchlist(watchingId);
+      setWatching(false);
+      setWatchingId(null);
+    } else {
+      const res = await addToWatchlist({
+        userId: user.id,
+        game: group.game,
+        catalogCardId,
+        cardName: group.card_name,
+        setName: group.set_name ?? null,
+        imageUrl: group.image_url ?? null,
+      });
+      if (res.error) {
+        dialog.alert({ title: 'Error', message: res.error });
+      } else {
+        setWatching(true);
+      }
+    }
+    setWatchBusy(false);
+  }
 
   return (
     <Modal visible={!!group} transparent animationType="slide" onRequestClose={onClose}>
@@ -331,13 +518,17 @@ function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: Card
                 <Image source={{ uri: group.image_url }} style={styles.modalImage} contentFit="contain" />
               ) : (
                 <View style={styles.modalImagePlaceholder}>
-                  <Ionicons name={gameIcon.name} size={64} color={gameIcon.color} />
+                  {gameLogo
+                    ? <Image source={gameLogo} style={{ width: 64, height: 64 }} contentFit="contain" />
+                    : <Ionicons name={gameIcon.name} size={64} color={gameIcon.color} />}
                 </View>
               )}
 
               <View style={styles.modalInfo}>
                 <View style={styles.modalGameRow}>
-                  <Ionicons name={gameIcon.name} size={14} color={gameIcon.color} />
+                  {gameLogo
+                    ? <Image source={gameLogo} style={styles.modalGameLogo} contentFit="contain" />
+                    : <Ionicons name={gameIcon.name} size={14} color={gameIcon.color} />}
                   <Text style={[styles.modalGameText, { color: gameIcon.color }]}>{GAME_LABELS[group.game]}</Text>
                   {group.card_number && <Text style={styles.modalCardNum}>#{group.card_number}</Text>}
                 </View>
@@ -347,6 +538,35 @@ function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: Card
                   <View style={styles.badgeFoil}>
                     <Text style={styles.badgeFoilText}>✦ Foil</Text>
                   </View>
+                )}
+                {(() => {
+                  const prices = group.listings.map(l => l.price_reference).filter((p): p is number => p != null);
+                  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+                  const currency = (group.listings.find(l => l.price_reference_currency)?.price_reference_currency ?? 'usd').toUpperCase();
+                  if (minPrice == null) return null;
+                  return (
+                    <View style={styles.modalSummary}>
+                      <Text style={styles.modalSummaryPrice}>Desde ${minPrice} {currency}</Text>
+                    </View>
+                  );
+                })()}
+
+                {catalogCardId && (
+                  <TouchableOpacity
+                    style={[styles.watchBtn, watching && styles.watchBtnActive]}
+                    onPress={toggleWatchlist}
+                    disabled={watchBusy}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={watching ? 'heart' : 'heart-outline'}
+                      size={16}
+                      color={watching ? '#fff' : '#A5B4FC'}
+                    />
+                    <Text style={[styles.watchBtnText, watching && styles.watchBtnTextActive]}>
+                      {watching ? 'En watchlist' : 'Avisame'}
+                    </Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </View>
@@ -368,15 +588,31 @@ function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: Card
                     : null;
                 return (
                   <View key={l.id} style={styles.listingRow}>
-                    <View style={styles.ownerAvatar}>
+                    <TouchableOpacity
+                      onPress={() => openUserProfile(l.user_id)}
+                      style={styles.ownerAvatar}
+                      activeOpacity={0.7}
+                    >
                       {l.profiles?.avatar_url ? (
                         <Image source={{ uri: l.profiles.avatar_url }} style={styles.ownerAvatarImg} />
                       ) : (
                         <Ionicons name="person-outline" size={18} color="#64748B" />
                       )}
-                    </View>
+                    </TouchableOpacity>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.ownerUsername}>@{l.profiles?.username ?? '—'}</Text>
+                      <TouchableOpacity onPress={() => openUserProfile(l.user_id)} activeOpacity={0.7} style={styles.ownerUsernameRow}>
+                        <Text style={styles.ownerUsername}>@{l.profiles?.username ?? '—'}</Text>
+                        {l.is_boosted && (
+                          <View style={styles.boostChip}>
+                            <Ionicons name="rocket" size={9} color="#0F172A" />
+                            <Text style={styles.boostChipText}>Destacado</Text>
+                          </View>
+                        )}
+                        <ProBadge status={l.profiles?.premium_status as any} />
+                      </TouchableOpacity>
+                      {memberSince(l.profiles?.created_at) && (
+                        <Text style={styles.ownerSince}>{memberSince(l.profiles?.created_at)}</Text>
+                      )}
                       <View style={styles.listingMetaRow}>
                         <Text style={styles.listingMeta}>
                           {CONDITION_LABELS[l.condition] ?? l.condition}
@@ -397,6 +633,16 @@ function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: Card
                         )}
                       </View>
                     </View>
+                    {(l.custom_photos?.length ?? 0) > 0 && (
+                      <TouchableOpacity
+                        style={styles.photoBtn}
+                        onPress={() => setLightboxPhotos(l.custom_photos)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Ionicons name="camera" size={14} color="#A5B4FC" />
+                        <Text style={styles.photoBtnText}>{l.custom_photos.length}</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={styles.listingBtn} onPress={() => onPropose(l)}>
                       <Ionicons name="arrow-forward" size={16} color="#fff" />
                     </TouchableOpacity>
@@ -407,6 +653,12 @@ function CardDetailModal({ group, myRegions, onClose, onPropose }: { group: Card
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
+
+      <PhotoLightbox
+        visible={lightboxPhotos.length > 0}
+        photos={lightboxPhotos}
+        onClose={() => setLightboxPhotos([])}
+      />
     </Modal>
   );
 }
@@ -423,6 +675,100 @@ function EmptyExplore() {
   );
 }
 
+// ─── Advanced filters modal ───────────────────────────────────────────────────
+
+const ALL_CONDITIONS: { value: CardCondition; label: string }[] = [
+  { value: 'mint', label: 'Nueva' },
+  { value: 'near_mint', label: 'Casi nueva' },
+  { value: 'excellent', label: 'Excelente' },
+  { value: 'good', label: 'Buena' },
+  { value: 'played', label: 'Jugada' },
+  { value: 'poor', label: 'Dañada' },
+];
+
+function AdvancedFiltersModal({
+  visible, filters, onChange, onClear, onClose,
+}: {
+  visible: boolean;
+  filters: AdvancedFilters;
+  onChange: (f: AdvancedFilters) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  function toggleCondition(c: CardCondition) {
+    const next = new Set(filters.conditions);
+    next.has(c) ? next.delete(c) : next.add(c);
+    onChange({ ...filters, conditions: next });
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={styles.filtersSheet}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+
+            <View style={styles.filtersHeader}>
+              <Text style={styles.filtersTitle}>Filtros</Text>
+              <TouchableOpacity onPress={onClear}>
+                <Text style={styles.filtersClear}>Limpiar todo</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 480 }}>
+              <Text style={styles.filtersGroupLabel}>Condición</Text>
+              <View style={styles.conditionsWrap}>
+                {ALL_CONDITIONS.map(c => {
+                  const active = filters.conditions.has(c.value);
+                  return (
+                    <TouchableOpacity
+                      key={c.value}
+                      style={[styles.conditionChip, active && styles.conditionChipActive]}
+                      onPress={() => toggleCondition(c.value)}
+                    >
+                      <Text style={[styles.conditionChipText, active && styles.conditionChipTextActive]}>{c.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.filtersGroupLabel}>Set / expansión</Text>
+              <TextInput
+                style={styles.setInput}
+                value={filters.setName}
+                onChangeText={v => onChange({ ...filters, setName: v })}
+                placeholder="Ej: Base Set, Modern Horizons..."
+                placeholderTextColor="#475569"
+              />
+
+              <View style={styles.foilRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.foilLabel}>Solo Foil / Holo</Text>
+                  <Text style={styles.foilHint}>Mostrar únicamente cartas foil</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.foilToggle, filters.foilOnly && styles.foilToggleActive]}
+                  onPress={() => onChange({ ...filters, foilOnly: !filters.foilOnly })}
+                >
+                  <Ionicons
+                    name={filters.foilOnly ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={filters.foilOnly ? '#FACC15' : '#64748B'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity style={styles.applyBtn} onPress={onClose} activeOpacity={0.85}>
+              <Text style={styles.applyBtnText}>Aplicar filtros</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -431,11 +777,29 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', color: '#F1F5F9' },
   subtitle: { fontSize: 13, color: '#64748B', marginTop: 2 },
 
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   searchInput: {
-    marginHorizontal: 0, marginBottom: 12,
+    marginHorizontal: 0,
     backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
     borderRadius: 12, padding: 12, fontSize: 14, color: '#F1F5F9',
   },
+  filtersBtn: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  filtersBtnActive: { backgroundColor: '#FACC15', borderColor: '#FACC15' },
+  filterCountBadge: {
+    position: 'absolute', top: -4, right: -4,
+    backgroundColor: '#6366F1', borderRadius: 9, minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  filterCountBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  clearFiltersRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', marginBottom: 12, paddingVertical: 4,
+  },
+  clearFiltersText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
   filterRow: { gap: 8, paddingBottom: 12 },
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -473,6 +837,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   countText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  boostChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#FACC15', borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  boostChipText: { color: '#0F172A', fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
 
   modalOverlay: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' },
   modalSheet: {
@@ -491,10 +861,24 @@ const styles = StyleSheet.create({
   },
   modalInfo: { flex: 1, gap: 6 },
   modalGameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  modalGameLogo: { width: 16, height: 16 },
   modalGameText: { fontSize: 12, fontWeight: '600' },
   modalCardNum: { color: '#64748B', fontSize: 12 },
   modalCardName: { fontSize: 18, fontWeight: '800', color: '#F1F5F9', lineHeight: 22 },
   modalSetName: { fontSize: 12, color: '#64748B' },
+  modalSummary: { marginTop: 8 },
+  modalSummaryPrice: { color: '#4ADE80', fontSize: 14, fontWeight: '700' },
+  watchBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(99,102,241,0.15)',
+    borderWidth: 1, borderColor: 'rgba(99,102,241,0.4)',
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    marginTop: 10,
+  },
+  watchBtnActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  watchBtnText: { color: '#A5B4FC', fontSize: 12, fontWeight: '700' },
+  watchBtnTextActive: { color: '#fff' },
   modalBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   badgePublished: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -532,7 +916,16 @@ const styles = StyleSheet.create({
   },
   ownerAvatarImg: { width: 40, height: 40 },
   ownerUsername: { color: '#A5B4FC', fontSize: 14, fontWeight: '700' },
+  ownerUsernameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ownerSince: { color: '#64748B', fontSize: 11, marginTop: 1 },
   listingMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, flexWrap: 'wrap' },
+  photoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(99,102,241,0.4)',
+  },
+  photoBtnText: { color: '#A5B4FC', fontSize: 11, fontWeight: '700' },
   listingMeta: { color: '#94A3B8', fontSize: 11 },
   listingMetaDot: { color: '#475569', fontSize: 11 },
   listingBtn: {
@@ -544,4 +937,51 @@ const styles = StyleSheet.create({
   emptyIcon: { marginBottom: 16 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: '#F1F5F9' },
   emptyText: { fontSize: 14, color: '#64748B', textAlign: 'center', marginTop: 8 },
+
+  filtersSheet: {
+    backgroundColor: '#0F172A', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 28,
+    borderTopWidth: 1, borderColor: '#334155',
+  },
+  filtersHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 14,
+  },
+  filtersTitle: { color: '#F1F5F9', fontSize: 20, fontWeight: '800' },
+  filtersClear: { color: '#A5B4FC', fontSize: 13, fontWeight: '600' },
+  filtersGroupLabel: {
+    color: '#64748B', fontSize: 11, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    marginBottom: 8, marginTop: 12,
+  },
+  conditionsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  conditionChip: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 10, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: '#1E293B',
+  },
+  conditionChipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  conditionChipText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
+  conditionChipTextActive: { color: '#fff' },
+  setInput: {
+    backgroundColor: '#1E293B', borderRadius: 10,
+    borderWidth: 1, borderColor: '#334155',
+    paddingHorizontal: 12, paddingVertical: 10,
+    color: '#F1F5F9', fontSize: 14,
+  },
+  foilRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#1E293B', borderRadius: 12,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 14, marginTop: 16,
+  },
+  foilLabel: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
+  foilHint: { color: '#64748B', fontSize: 12, marginTop: 2 },
+  foilToggle: { padding: 4 },
+  foilToggleActive: {},
+  applyBtn: {
+    marginTop: 18, backgroundColor: '#6366F1', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center',
+  },
+  applyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

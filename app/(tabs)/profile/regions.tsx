@@ -7,16 +7,34 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useDialog } from '@/lib/AppDialog';
 import { CHILE_REGIONS } from '@/lib/regions';
+import { usePremium } from '@/lib/usePremium';
+import { canAddRegion, limitReachedMessage, FREE_LIMITS } from '@/lib/planLimits';
 
 export default function RegionsScreen() {
   const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
   const dialog = useDialog();
+  const { isPremium } = usePremium();
   const [selected, setSelected] = useState<Set<string>>(new Set(profile?.regions ?? []));
   const [saving, setSaving] = useState(false);
 
   async function toggle(code: string) {
     if (saving) return;
+    const isAdding = !selected.has(code);
+    if (isAdding) {
+      const check = canAddRegion(selected.size, isPremium);
+      if (!check.allowed) {
+        const { title, message } = limitReachedMessage('regions', check.current, check.limit);
+        dialog.confirm({
+          title,
+          message,
+          confirmText: 'Pasarme a Pro',
+          cancelText: 'Más tarde',
+          onConfirm: () => router.push('/paywall'),
+        });
+        return;
+      }
+    }
     const next = new Set(selected);
     next.has(code) ? next.delete(code) : next.add(code);
     if (next.size === 0) {

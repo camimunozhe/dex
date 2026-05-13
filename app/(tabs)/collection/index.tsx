@@ -13,6 +13,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { usePremium } from '@/lib/usePremium';
+import { canCreateFolder, FREE_LIMITS, limitReachedMessage } from '@/lib/planLimits';
 import type { CardCollection, CollectionFolder, TCGGame } from '@/types/database';
 import { formatPrice, formatCurrencyValue, currencyLabel } from '@/lib/currency';
 import { validateFolderGame, gameLabel } from '@/lib/folderValidation';
@@ -20,6 +22,7 @@ import { reassignFolderCardsToDefault } from '@/lib/defaultFolders';
 import { getUsdToClp } from '@/lib/exchangeRate';
 import { availabilityBorder } from '@/lib/cardStyle';
 import { resolveEnabledGames } from '@/lib/enabledGames';
+import { assertCanPublish } from '@/lib/publishGate';
 import { effectivePrice, COLLECTION_CARD_SELECT, type CardWithCatalog } from '@/lib/cardPrice';
 import { FolderIcon } from '@/lib/folderIcon';
 import { UndoSnackbar } from '@/lib/UndoSnackbar';
@@ -49,6 +52,7 @@ export default function CollectionScreen() {
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const dialog = useDialog();
+  const { isPremium } = usePremium();
   const [folders, setFolders] = useState<CollectionFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -180,6 +184,22 @@ export default function CollectionScreen() {
     return () => { mounted = false; };
   }, [currency]);
 
+  function openCreateFolder() {
+    const check = canCreateFolder(folders.length, isPremium);
+    if (!check.allowed) {
+      const { title, message } = limitReachedMessage('folders', check.current, check.limit);
+      dialog.confirm({
+        title,
+        message,
+        confirmText: 'Pasarme a Pro',
+        cancelText: 'Más tarde',
+        onConfirm: () => router.push('/paywall'),
+      });
+      return;
+    }
+    setFolderForm({ mode: 'create', name: '', color: FOLDER_COLORS[0] });
+  }
+
   async function saveFolderForm() {
     if (!user || !folderForm?.name.trim()) return;
     if (folderForm.mode === 'create') {
@@ -284,6 +304,16 @@ export default function CollectionScreen() {
   }
 
   async function handleToggleField(card: CardCollectionWithPrice, field: 'is_published', value: boolean) {
+    if (field === 'is_published' && value && user) {
+      const ok = await assertCanPublish({
+        userId: user.id,
+        isPremium,
+        addCount: 1,
+        dialog,
+        onUpgrade: () => router.push('/paywall'),
+      });
+      if (!ok) return;
+    }
     await supabase.from('cards_collection').update({ [field]: value }).eq('id', card.id);
     setAllUserCards(prev => prev.map(c => c.id === card.id ? { ...c, [field]: value } : c));
     setCardActionCard(c => c?.id === card.id ? { ...c, [field]: value } : c);
@@ -341,6 +371,17 @@ export default function CollectionScreen() {
     const ids = Array.from(selectedCards);
     const selectedList = allCards.filter(c => selectedCards.has(c.id));
     const newValue = !selectedList.every(c => c[field]);
+    if (field === 'is_published' && newValue && user) {
+      const willPublish = selectedList.filter(c => !c.is_published).length;
+      const ok = await assertCanPublish({
+        userId: user.id,
+        isPremium,
+        addCount: willPublish,
+        dialog,
+        onUpgrade: () => router.push('/paywall'),
+      });
+      if (!ok) return;
+    }
     await supabase.from('cards_collection').update({ [field]: newValue }).in('id', ids);
     setAllUserCards(prev => prev.map(c => selectedCards.has(c.id) ? { ...c, [field]: newValue } : c));
     exitSelectionMode();
@@ -456,6 +497,7 @@ export default function CollectionScreen() {
               folderForm={folderForm}
               setFolderForm={setFolderForm}
               saveFolderForm={saveFolderForm}
+              openCreateFolder={openCreateFolder}
               handleFolderLongPress={handleFolderLongPress}
               uniqueGames={uniqueGames}
               filterGame={filterGame}
@@ -750,7 +792,7 @@ function FolderActionModal({
 
 function CollectionHeader({
   search, onSearchChange, searching, folders, folderCounts, folderValues, folderGameMap, folderForm, setFolderForm,
-  saveFolderForm, handleFolderLongPress, uniqueGames, filterGame, setFilterGame, currency, usdToClp, onFolderPress,
+  saveFolderForm, openCreateFolder, handleFolderLongPress, uniqueGames, filterGame, setFilterGame, currency, usdToClp, onFolderPress,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -762,6 +804,7 @@ function CollectionHeader({
   folderForm: FolderForm | null;
   setFolderForm: (f: FolderForm | null) => void;
   saveFolderForm: () => void;
+  openCreateFolder: () => void;
   handleFolderLongPress: (f: CollectionFolder) => void;
   uniqueGames: Set<TCGGame>;
   filterGame: TCGGame | 'all';
@@ -794,7 +837,7 @@ function CollectionHeader({
       <View style={styles.foldersSection}>
         <View style={styles.foldersSectionHeader}>
           <Text style={styles.sectionLabel}>Carpetas</Text>
-          <TouchableOpacity onPress={() => setFolderForm({ mode: 'create', name: '', color: FOLDER_COLORS[0] })}>
+          <TouchableOpacity onPress={openCreateFolder}>
             <Text style={styles.newFolderLink}>+ Nueva</Text>
           </TouchableOpacity>
         </View>
@@ -834,7 +877,7 @@ function CollectionHeader({
         {folders.length === 0 && !folderForm ? (
           <TouchableOpacity
             style={styles.emptyFolders}
-            onPress={() => setFolderForm({ mode: 'create', name: '', color: FOLDER_COLORS[0] })}
+            onPress={openCreateFolder}
           >
             <Ionicons name="folder-open-outline" size={20} color="#334155" />
             <Text style={styles.emptyFoldersText}>Crea una carpeta para organizar tu colección</Text>

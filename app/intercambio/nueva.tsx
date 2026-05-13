@@ -11,6 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { resolveEnabledGames } from '@/lib/enabledGames';
+import { usePremium } from '@/lib/usePremium';
+import { useDialog } from '@/lib/AppDialog';
+import { FREE_LIMITS, limitReachedMessage } from '@/lib/planLimits';
 import type { CardCollection } from '@/types/database';
 
 const CARD_THUMB_WIDTH = (Dimensions.get('window').width - 32 - 16) / 3;
@@ -19,6 +22,8 @@ export default function NuevaPropuestaScreen() {
   const { receiver_id, card_id } = useLocalSearchParams<{ receiver_id: string; card_id: string }>();
   const { user, profile } = useAuth();
   const router = useRouter();
+  const dialog = useDialog();
+  const { isPremium } = usePremium();
 
   const [receiverProfile, setReceiverProfile] = useState<{ username: string; avatar_url: string | null } | null>(null);
   const [theirCards, setTheirCards] = useState<CardCollection[]>([]);
@@ -49,6 +54,26 @@ export default function NuevaPropuestaScreen() {
 
   async function submit() {
     if (selectedTheir.size === 0) { Alert.alert('Selecciona al menos una carta'); return; }
+
+    if (!isPremium && user) {
+      const { count } = await supabase
+        .from('meetups')
+        .select('id', { count: 'exact', head: true })
+        .or(`proposer_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .in('status', ['pending', 'countered', 'confirmed']);
+      const current = count ?? 0;
+      if (current >= FREE_LIMITS.activeTrades) {
+        const { title, message } = limitReachedMessage('activeTrades', current, FREE_LIMITS.activeTrades);
+        dialog.confirm({
+          title,
+          message,
+          confirmText: 'Pasarme a Pro',
+          cancelText: 'Más tarde',
+          onConfirm: () => router.push('/paywall'),
+        });
+        return;
+      }
+    }
 
     setSaving(true);
     const { data: meetupData, error } = await supabase.from('meetups').insert({
@@ -92,8 +117,7 @@ export default function NuevaPropuestaScreen() {
     });
 
     setSaving(false);
-    router.replace('/(tabs)/encuentros');
-    router.push({ pathname: '/(tabs)/encuentros/[id]', params: { id: meetupId } });
+    router.replace({ pathname: '/intercambio/[id]', params: { id: meetupId } });
   }
 
   if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: '#0F172A' }} color="#94A3B8" />;
@@ -106,8 +130,8 @@ export default function NuevaPropuestaScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/meetups')}>
-          <Text style={styles.back}>← Volver</Text>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/meetups')}>
+          <Text style={styles.back} numberOfLines={1}>← Volver</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Nuevo intercambio</Text>
         <View style={{ width: 60 }} />
@@ -221,7 +245,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B',
   },
-  back: { color: '#6366F1', fontSize: 15, width: 60 },
+  back: { color: '#6366F1', fontSize: 15, minWidth: 60 },
   headerTitle: { color: '#F1F5F9', fontSize: 16, fontWeight: '700' },
 
   profileRow: {

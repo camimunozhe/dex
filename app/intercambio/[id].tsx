@@ -13,6 +13,7 @@ import { useAuth } from '@/context/AuthContext';
 import { resolveEnabledGames } from '@/lib/enabledGames';
 import type { Meetup, CardCollection, CollectionFolder, Message, TCGGame } from '@/types/database';
 import { FolderIcon } from '@/lib/folderIcon';
+import { ProBadge } from '@/lib/ProBadge';
 
 type CardWithMeta = CardCollection & {
   meetup_card_id: string;
@@ -20,9 +21,17 @@ type CardWithMeta = CardCollection & {
 };
 
 type MeetupFull = Meetup & {
-  proposer: { username: string; avatar_url: string | null } | null;
-  receiver: { username: string; avatar_url: string | null } | null;
+  proposer: { username: string; avatar_url: string | null; created_at: string; premium_status: string | null } | null;
+  receiver: { username: string; avatar_url: string | null; created_at: string; premium_status: string | null } | null;
 };
+
+function memberSince(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const month = d.toLocaleDateString('es', { month: 'short' }).replace('.', '');
+  return `Miembro desde ${month} ${d.getFullYear()}`;
+}
 
 type ZoomedCard = {
   id: string;
@@ -93,11 +102,18 @@ export default function EncuentroDetailScreen() {
   const [editMyCardIds, setEditMyCardIds] = useState<Set<string>>(new Set());
   const [counterPrice, setCounterPrice] = useState('');
 
+  // Rating
+  const [myRating, setMyRating] = useState<'positive' | 'negative' | null>(null);
+  const [showRating, setShowRating] = useState(false);
+  const [ratingChoice, setRatingChoice] = useState<'positive' | 'negative' | null>(null);
+  const [ratingComment, setRatingComment] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
+
   const load = useCallback(async () => {
-    const [meetupRes, cardsRes, messagesRes] = await Promise.all([
+    const [meetupRes, cardsRes, messagesRes, ratingRes] = await Promise.all([
       supabase
         .from('meetups')
-        .select('*, proposer:proposer_id(username, avatar_url), receiver:receiver_id(username, avatar_url)')
+        .select('*, proposer:proposer_id(username, avatar_url, created_at, premium_status), receiver:receiver_id(username, avatar_url, created_at, premium_status)')
         .eq('id', id)
         .single(),
       supabase
@@ -109,6 +125,14 @@ export default function EncuentroDetailScreen() {
         .select('*')
         .eq('meetup_id', id)
         .order('created_at', { ascending: true }),
+      user
+        ? supabase
+            .from('meetup_ratings')
+            .select('rating')
+            .eq('meetup_id', id)
+            .eq('rater_id', user.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     setMeetup(meetupRes.data as MeetupFull);
@@ -119,7 +143,9 @@ export default function EncuentroDetailScreen() {
     }));
     setCards(mapped);
     setMessages((messagesRes.data ?? []) as Message[]);
-  }, [id]);
+    const rate = (ratingRes as any)?.data?.rating ?? null;
+    setMyRating(rate);
+  }, [id, user]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -154,12 +180,15 @@ export default function EncuentroDetailScreen() {
 
   const isProposer = meetup.proposer_id === user?.id;
   const other = isProposer ? meetup.receiver : meetup.proposer;
+  const otherId = isProposer ? meetup.receiver_id : meetup.proposer_id;
   const myCards = cards.filter(c => c.side === (isProposer ? 'proposer' : 'receiver'));
   const theirCards = cards.filter(c => c.side === (isProposer ? 'receiver' : 'proposer'));
   const status = STATUS_LABEL[meetup.status] ?? { label: meetup.status, color: '#94A3B8' };
   const canRespond = !isProposer && meetup.status === 'pending';
   const canEdit = meetup.status === 'pending';
   const isConfirmed = meetup.status === 'confirmed';
+  const isCompleted = meetup.status === 'completed';
+  const canRate = isCompleted && !myRating && !!user && !!otherId;
   const myCheckedIn = isProposer ? meetup.proposer_checked_in : meetup.receiver_checked_in;
   const chatEnabled = meetup.status !== 'cancelled';
 
@@ -272,6 +301,31 @@ export default function EncuentroDetailScreen() {
     setSaving(false);
   }
 
+  function openRating() {
+    setRatingChoice(null);
+    setRatingComment('');
+    setShowRating(true);
+  }
+
+  async function submitRating() {
+    if (!ratingChoice || !user || !otherId) return;
+    setSubmittingRating(true);
+    const { error } = await supabase.from('meetup_ratings').insert({
+      meetup_id: id as string,
+      rater_id: user.id,
+      rated_id: otherId,
+      rating: ratingChoice,
+      comment: ratingComment.trim() ? ratingComment.trim() : null,
+    });
+    setSubmittingRating(false);
+    if (error) {
+      Alert.alert('No se pudo enviar', error.message);
+      return;
+    }
+    setMyRating(ratingChoice);
+    setShowRating(false);
+  }
+
   async function sendMessage() {
     const body = messageDraft.trim();
     if (!body || sendingMsg || !user) return;
@@ -299,17 +353,30 @@ export default function EncuentroDetailScreen() {
         <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/encuentros')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="chevron-back" size={24} color="#6366F1" />
         </TouchableOpacity>
-        <View style={styles.headerUser}>
+        <TouchableOpacity
+          style={styles.headerUser}
+          onPress={() => {
+            const otherId = isProposer ? meetup.receiver_id : meetup.proposer_id;
+            if (otherId) router.push({ pathname: '/user/[id]', params: { id: otherId } });
+          }}
+          activeOpacity={0.7}
+        >
           <View style={styles.headerAvatar}>
             {other?.avatar_url
               ? <Image source={{ uri: other.avatar_url }} style={styles.headerAvatarImg} />
               : <Ionicons name="person-outline" size={16} color="#64748B" />}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerUsername} numberOfLines={1}>@{other?.username ?? '—'}</Text>
-            <Text style={styles.headerRole}>{isProposer ? 'Receptor' : 'Proponente'}</Text>
+            <View style={styles.headerUsernameRow}>
+              <Text style={styles.headerUsername} numberOfLines={1}>@{other?.username ?? '—'}</Text>
+              <ProBadge status={other?.premium_status as any} />
+            </View>
+            <Text style={styles.headerRole}>
+              {isProposer ? 'Receptor' : 'Proponente'}
+              {memberSince(other?.created_at) ? ` · ${memberSince(other?.created_at)}` : ''}
+            </Text>
           </View>
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setShowSummary(true)}
           hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
@@ -374,8 +441,23 @@ export default function EncuentroDetailScreen() {
         </ScrollView>
 
         {/* Compact action bar (above the input) */}
-        {(canRespond || canEdit || isConfirmed) && (
+        {(canRespond || canEdit || isConfirmed || isCompleted) && (
           <View style={styles.actionBar}>
+            {canRate && (
+              <CompactAction icon="thumbs-up-outline" label="Calificar" color="#6366F1" onPress={openRating} disabled={saving} />
+            )}
+            {isCompleted && myRating && (
+              <View style={styles.ratedBadge}>
+                <Ionicons
+                  name={myRating === 'positive' ? 'thumbs-up' : 'thumbs-down'}
+                  size={14}
+                  color={myRating === 'positive' ? '#4ADE80' : '#EF4444'}
+                />
+                <Text style={styles.ratedBadgeText}>
+                  Ya calificaste a @{other?.username ?? '—'}
+                </Text>
+              </View>
+            )}
             {canRespond && (
               <>
                 <CompactAction icon="checkmark-outline" label="Aceptar" color="#22C55E" onPress={() => updateStatus('confirmed')} disabled={saving} />
@@ -521,6 +603,69 @@ export default function EncuentroDetailScreen() {
           )}
         </SafeAreaView>
         </SafeAreaProvider>
+      </Modal>
+
+      {/* Rating modal */}
+      <Modal visible={showRating} transparent animationType="fade" onRequestClose={() => setShowRating(false)}>
+        <TouchableOpacity style={styles.ratingOverlay} activeOpacity={1} onPress={() => setShowRating(false)}>
+          <View style={styles.ratingSheet} onStartShouldSetResponder={() => true}>
+            <Text style={styles.ratingTitle}>Calificar intercambio</Text>
+            <Text style={styles.ratingSub}>¿Cómo fue tu experiencia con @{other?.username ?? '—'}?</Text>
+
+            <View style={styles.ratingChoices}>
+              <TouchableOpacity
+                style={[styles.ratingChoice, ratingChoice === 'positive' && styles.ratingChoicePositiveActive]}
+                onPress={() => setRatingChoice('positive')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={ratingChoice === 'positive' ? 'thumbs-up' : 'thumbs-up-outline'}
+                  size={32}
+                  color={ratingChoice === 'positive' ? '#4ADE80' : '#94A3B8'}
+                />
+                <Text style={[styles.ratingChoiceText, ratingChoice === 'positive' && { color: '#4ADE80' }]}>Buena</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.ratingChoice, ratingChoice === 'negative' && styles.ratingChoiceNegativeActive]}
+                onPress={() => setRatingChoice('negative')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={ratingChoice === 'negative' ? 'thumbs-down' : 'thumbs-down-outline'}
+                  size={32}
+                  color={ratingChoice === 'negative' ? '#EF4444' : '#94A3B8'}
+                />
+                <Text style={[styles.ratingChoiceText, ratingChoice === 'negative' && { color: '#EF4444' }]}>Mala</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.ratingComment}
+              value={ratingComment}
+              onChangeText={setRatingComment}
+              placeholder="Comentario (opcional)"
+              placeholderTextColor="#475569"
+              multiline
+              maxLength={300}
+            />
+
+            <View style={styles.ratingActions}>
+              <TouchableOpacity style={styles.ratingCancel} onPress={() => setShowRating(false)} disabled={submittingRating}>
+                <Text style={styles.ratingCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ratingSubmit, (!ratingChoice || submittingRating) && styles.ratingSubmitDisabled]}
+                onPress={submitRating}
+                disabled={!ratingChoice || submittingRating}
+              >
+                {submittingRating
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.ratingSubmitText}>Enviar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -938,6 +1083,7 @@ const styles = StyleSheet.create({
   },
   headerAvatarImg: { width: 32, height: 32 },
   headerUsername: { color: '#F1F5F9', fontSize: 14, fontWeight: '700' },
+  headerUsernameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerRole: { color: '#64748B', fontSize: 11 },
   statusPill: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '700' },
@@ -1152,4 +1298,55 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A', borderRadius: 10, borderWidth: 1,
     borderColor: '#334155', padding: 12, color: '#F1F5F9', fontSize: 14,
   },
+
+  // Rating
+  ratedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: '#1E293B', borderRadius: 10,
+    borderWidth: 1, borderColor: '#334155',
+    flex: 1,
+  },
+  ratedBadgeText: { color: '#94A3B8', fontSize: 12, fontWeight: '600', flex: 1 },
+  ratingOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  ratingSheet: {
+    width: '100%', maxWidth: 400,
+    backgroundColor: '#1E293B', borderRadius: 16,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 20, gap: 14,
+  },
+  ratingTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '800' },
+  ratingSub: { color: '#94A3B8', fontSize: 13, marginTop: -8 },
+  ratingChoices: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  ratingChoice: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 18, gap: 6,
+    backgroundColor: '#0F172A', borderRadius: 12,
+    borderWidth: 1, borderColor: '#334155',
+  },
+  ratingChoicePositiveActive: { borderColor: '#4ADE80', backgroundColor: 'rgba(74,222,128,0.08)' },
+  ratingChoiceNegativeActive: { borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,0.08)' },
+  ratingChoiceText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
+  ratingComment: {
+    backgroundColor: '#0F172A', borderRadius: 10,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 12, color: '#F1F5F9', fontSize: 14,
+    minHeight: 70, textAlignVertical: 'top',
+  },
+  ratingActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  ratingCancel: {
+    flex: 1, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155',
+    alignItems: 'center',
+  },
+  ratingCancelText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  ratingSubmit: {
+    flex: 1, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: '#6366F1', alignItems: 'center', justifyContent: 'center',
+  },
+  ratingSubmitDisabled: { opacity: 0.5 },
+  ratingSubmitText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

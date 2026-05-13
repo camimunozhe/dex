@@ -75,7 +75,7 @@ export default function EncuentrosScreen() {
             <MeetupRow
               meetup={item}
               isReceived={item.receiver_id === user?.id}
-              onPress={() => router.push({ pathname: '/(tabs)/encuentros/[id]', params: { id: item.id } })}
+              onPress={() => router.push({ pathname: '/intercambio/[id]', params: { id: item.id } })}
             />
           )}
           ListEmptyComponent={<EmptyState />}

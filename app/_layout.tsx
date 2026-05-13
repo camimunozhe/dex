@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
+import Purchases from 'react-native-purchases';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { DialogProvider } from '@/lib/AppDialog';
 import { usePushTokenRegistration } from '@/lib/usePushTokenRegistration';
@@ -16,8 +18,32 @@ function RootNavigator() {
   const router = useRouter();
   const [pendingMeetupId, setPendingMeetupId] = useState<string | null>(null);
   const handledColdStart = useRef(false);
+  const purchasesConfigured = useRef(false);
 
   usePushTokenRegistration(user?.id);
+
+  useEffect(() => {
+    if (purchasesConfigured.current) return;
+    try {
+      const keys = (Constants.expoConfig?.extra as any)?.revenuecat ?? {};
+      const apiKey = Platform.OS === 'ios' ? keys.ios : keys.android;
+      if (!apiKey) return;
+      if (!Purchases || typeof Purchases.configure !== 'function') return;
+      Purchases.configure({ apiKey });
+      purchasesConfigured.current = true;
+    } catch (e) {
+      console.warn('[purchases] configure failed', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!purchasesConfigured.current || !user) return;
+    try {
+      Purchases.logIn(user.id).catch(() => {});
+    } catch (e) {
+      console.warn('[purchases] logIn failed', e);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     if (loading) return;
@@ -54,8 +80,7 @@ function RootNavigator() {
 
   useEffect(() => {
     if (!pendingMeetupId || loading || !session) return;
-    router.replace('/(tabs)/encuentros');
-    router.push({ pathname: '/(tabs)/encuentros/[id]', params: { id: pendingMeetupId } });
+    router.push({ pathname: '/intercambio/[id]', params: { id: pendingMeetupId } });
     setPendingMeetupId(null);
   }, [pendingMeetupId, loading, session]);
 
@@ -64,6 +89,10 @@ function RootNavigator() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(onboarding)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="user/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="intercambio/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="intercambio/nueva" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="paywall" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
     </Stack>
   );
 }

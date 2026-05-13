@@ -8,12 +8,12 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { GAME_DISPLAY_NAMES, resolveEnabledGames } from '@/lib/enabledGames';
+import { ProBadge } from '@/lib/ProBadge';
 
 type Reputation = { positive_count: number; negative_count: number; total_ratings: number } | null;
+type GameBreakdown = { pokemon: number; magic: number; published: number };
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const VERIFICATION_BADGE: Record<string, { icon: IoniconName; color: string; label: string }> = {
@@ -23,12 +23,21 @@ const VERIFICATION_BADGE: Record<string, { icon: IoniconName; color: string; lab
   advanced: { icon: 'star', color: '#A855F7', label: 'Avanzado' },
 };
 
+function memberSince(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const month = d.toLocaleDateString('es', { month: 'short' }).replace('.', '');
+  return `${month} ${d.getFullYear()}`;
+}
+
 export default function ProfileScreen() {
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
   const [reputation, setReputation] = useState<Reputation>(null);
   const [collectionCount, setCollectionCount] = useState(0);
   const [meetupCount, setMeetupCount] = useState(0);
+  const [breakdown, setBreakdown] = useState<GameBreakdown>({ pokemon: 0, magic: 0, published: 0 });
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -40,10 +49,14 @@ export default function ProfileScreen() {
       supabase.from('meetups').select('id', { count: 'exact' })
         .or(`proposer_id.eq.${user.id},receiver_id.eq.${user.id}`)
         .eq('status', 'completed'),
-    ]).then(([rep, col, meet]) => {
+      supabase.from('cards_collection').select('id', { count: 'exact' }).eq('user_id', user.id).eq('game', 'pokemon'),
+      supabase.from('cards_collection').select('id', { count: 'exact' }).eq('user_id', user.id).eq('game', 'magic'),
+      supabase.from('cards_collection').select('id', { count: 'exact' }).eq('user_id', user.id).eq('is_published', true),
+    ]).then(([rep, col, meet, pkm, mtg, pub]) => {
       setReputation(rep.data as Reputation);
       setCollectionCount(col.count ?? 0);
       setMeetupCount(meet.count ?? 0);
+      setBreakdown({ pokemon: pkm.count ?? 0, magic: mtg.count ?? 0, published: pub.count ?? 0 });
       setLoading(false);
     });
   }, [user]);
@@ -101,16 +114,9 @@ export default function ProfileScreen() {
     }
   }
 
-
-  async function handleSignOut() {
-    Alert.alert('Cerrar sesión', '¿Seguro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Salir', style: 'destructive', onPress: signOut },
-    ]);
-  }
-
   const verLevel = profile?.verification_level ?? 'none';
   const verBadge = VERIFICATION_BADGE[verLevel] ?? VERIFICATION_BADGE.none;
+  const since = memberSince(profile?.created_at);
   const positiveRate = reputation && reputation.total_ratings > 0
     ? Math.round((reputation.positive_count / reputation.total_ratings) * 100)
     : null;
@@ -119,17 +125,26 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <View style={styles.topBar}>
+        <View style={{ width: 36 }} />
+        <Text style={styles.topBarTitle}>Perfil</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/profile/settings')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.settingsBtn}
+        >
+          <Ionicons name="settings-outline" size={22} color="#94A3B8" />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView>
-        {/* Header */}
         <View style={styles.hero}>
           <TouchableOpacity style={styles.avatarWrap} onPress={pickAvatar} disabled={uploadingAvatar} activeOpacity={0.8}>
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} contentFit="cover" />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>
-                  {profile?.username?.[0]?.toUpperCase() ?? '?'}
-                </Text>
+                <Text style={styles.avatarText}>{profile?.username?.[0]?.toUpperCase() ?? '?'}</Text>
               </View>
             )}
             <View style={styles.avatarEditBadge}>
@@ -139,154 +154,78 @@ export default function ProfileScreen() {
             </View>
           </TouchableOpacity>
 
-          <Text style={styles.username}>@{profile?.username}</Text>
-          {profile?.bio && <Text style={styles.bio}>{profile.bio}</Text>}
+          <View style={styles.usernameRow}>
+            <Text style={styles.username}>@{profile?.username}</Text>
+            <ProBadge status={profile?.premium_status} size="md" />
+          </View>
+          {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
-          <TouchableOpacity
-            style={styles.verifyBtn}
-            onPress={() => router.push('/(tabs)/profile/verify')}
-          >
-            <Ionicons name={verBadge.icon} size={14} color={verBadge.color} style={styles.verifyBtnIcon} />
-            <Text style={styles.verifyBtnText}>{verBadge.label}</Text>
-            {verLevel !== 'advanced' && (
-              <Ionicons name="chevron-forward" size={14} color="#6366F1" style={styles.verifyArrow} />
+          <View style={styles.badgesRow}>
+            <TouchableOpacity style={styles.badgeChip} onPress={() => router.push('/(tabs)/profile/verify')}>
+              <Ionicons name={verBadge.icon} size={13} color={verBadge.color} />
+              <Text style={styles.badgeText}>{verBadge.label}</Text>
+              {verLevel !== 'advanced' && <Ionicons name="chevron-forward" size={12} color="#64748B" />}
+            </TouchableOpacity>
+            {since && (
+              <View style={styles.badgeChip}>
+                <Ionicons name="calendar-outline" size={13} color="#94A3B8" />
+                <Text style={styles.badgeText}>Desde {since}</Text>
+              </View>
             )}
-          </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Stats */}
         <View style={styles.stats}>
           <StatBox label="Cartas" value={String(collectionCount)} />
+          <View style={styles.statDivider} />
           <StatBox label="Intercambios" value={String(meetupCount)} />
+          <View style={styles.statDivider} />
           <StatBox
             label="Reputación"
             value={positiveRate !== null ? `${positiveRate}%` : '—'}
-            sub={reputation ? `${reputation.total_ratings} ratings` : undefined}
+            sub={reputation && reputation.total_ratings > 0 ? `${reputation.total_ratings} ratings` : undefined}
           />
         </View>
 
-        {/* Reputación detalle */}
-        {reputation && reputation.total_ratings > 0 && (
+        {collectionCount > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Reputación de la comunidad</Text>
-            <View style={styles.repBar}>
-              <View style={[styles.repPositive, { flex: reputation.positive_count }]} />
-              <View style={[styles.repNegative, { flex: reputation.negative_count || 0.01 }]} />
-            </View>
-            <View style={styles.repLabels}>
-              <View style={styles.repLabelItem}>
-                <Ionicons name="thumbs-up" size={14} color="#4ADE80" />
-                <Text style={styles.repPositiveText}>{reputation.positive_count} positivos</Text>
+            <Text style={styles.sectionTitle}>Colección</Text>
+            <View style={styles.metricsList}>
+              {breakdown.pokemon > 0 && (
+                <View style={styles.metricRow}>
+                  <View style={styles.metricLabel}>
+                    <View style={[styles.metricDot, { backgroundColor: '#FACC15' }]} />
+                    <Text style={styles.metricLabelText}>Pokémon</Text>
+                  </View>
+                  <Text style={styles.metricValue}>{breakdown.pokemon}</Text>
+                </View>
+              )}
+              {breakdown.magic > 0 && (
+                <View style={styles.metricRow}>
+                  <View style={styles.metricLabel}>
+                    <View style={[styles.metricDot, { backgroundColor: '#A78BFA' }]} />
+                    <Text style={styles.metricLabelText}>Magic</Text>
+                  </View>
+                  <Text style={styles.metricValue}>{breakdown.magic}</Text>
+                </View>
+              )}
+              <View style={[styles.metricRow, styles.metricRowLast]}>
+                <View style={styles.metricLabel}>
+                  <Ionicons name="pricetag-outline" size={14} color="#4ADE80" />
+                  <Text style={styles.metricLabelText}>Publicadas</Text>
+                </View>
+                <Text style={[styles.metricValue, { color: '#4ADE80' }]}>{breakdown.published}</Text>
               </View>
-              <View style={styles.repLabelItem}>
-                <Ionicons name="thumbs-down" size={14} color="#EF4444" />
-                <Text style={styles.repNegativeText}>{reputation.negative_count} negativos</Text>
-              </View>
             </View>
+            <TouchableOpacity style={styles.statsLink} onPress={() => router.push('/(tabs)/profile/stats')} activeOpacity={0.7}>
+              <Ionicons name="stats-chart" size={16} color="#FB923C" />
+              <Text style={styles.statsLinkText}>Ver stats completas</Text>
+              <Ionicons name="chevron-forward" size={14} color="#64748B" />
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Configuración */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Configuración</Text>
-          <View style={styles.settingsList}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push('/(tabs)/profile/games')}
-            >
-              <View style={styles.menuItemContent}>
-                <Ionicons name="game-controller-outline" size={18} color="#94A3B8" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.menuItemText}>Juegos</Text>
-                  <Text style={styles.menuItemSub} numberOfLines={1}>
-                    {resolveEnabledGames(profile?.enabled_games).filter(g => g !== 'other').map(g => GAME_DISPLAY_NAMES[g].split(':')[0]).join(' · ')}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#64748B" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push('/(tabs)/profile/currency')}
-            >
-              <View style={styles.menuItemContent}>
-                <Ionicons name="cash-outline" size={18} color="#94A3B8" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.menuItemText}>Divisa</Text>
-                  <Text style={styles.menuItemSub}>Para mostrar precios en tu colección</Text>
-                </View>
-              </View>
-              <View style={styles.settingRowRight}>
-                <Text style={styles.settingValue}>{(profile?.currency ?? 'usd').toUpperCase()}</Text>
-                <Ionicons name="chevron-forward" size={18} color="#64748B" />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.menuItem, styles.menuItemLast]}
-              onPress={() => router.push('/(tabs)/profile/regions')}
-            >
-              <View style={styles.menuItemContent}>
-                <Ionicons name="location-outline" size={18} color="#94A3B8" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.menuItemText}>Regiones</Text>
-                  <Text style={styles.menuItemSub} numberOfLines={1}>
-                    {(profile?.regions ?? []).length > 0
-                      ? `${(profile?.regions ?? []).length} seleccionada${(profile?.regions ?? []).length === 1 ? '' : 's'}`
-                      : 'Donde puedes intercambiar'}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Verificación */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Identidad</Text>
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => router.push('/(tabs)/profile/verify')}
-          >
-            <View style={styles.menuItemContent}>
-              <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
-              <Text style={styles.menuItemText}>Verificación de identidad</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#64748B" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Cuenta */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cuenta</Text>
-          <View style={styles.settingsList}>
-            <View style={styles.menuItem}>
-              <View style={styles.menuItemContent}>
-                <Ionicons name="mail-outline" size={18} color="#94A3B8" />
-                <Text style={styles.menuItemText}>{user?.email}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push('/(tabs)/profile/privacy')}
-            >
-              <View style={styles.menuItemContent}>
-                <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
-                <Text style={styles.menuItemText}>Privacidad</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#64748B" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={handleSignOut}>
-              <Text style={styles.menuItemDangerText}>Cerrar sesión</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text style={styles.version}>
-          v{Constants.expoConfig?.version ?? '—'}
-        </Text>
-
-        <View style={{ height: 20 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -304,15 +243,22 @@ function StatBox({ label, value, sub }: { label: string; value: string; sub?: st
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
-  hero: { alignItems: 'center', padding: 24, paddingBottom: 20 },
 
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  topBarTitle: { color: '#F1F5F9', fontSize: 16, fontWeight: '700' },
+  settingsBtn: { width: 36, alignItems: 'flex-end' },
+
+  hero: { alignItems: 'center', padding: 24, paddingTop: 8, paddingBottom: 16 },
   avatarWrap: { position: 'relative', marginBottom: 12 },
-  avatarImg: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#6366F1' },
+  avatarImg: { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: '#6366F1' },
   avatarPlaceholder: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 96, height: 96, borderRadius: 48,
     backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center',
   },
-  avatarText: { color: '#fff', fontSize: 32, fontWeight: '800' },
+  avatarText: { color: '#fff', fontSize: 36, fontWeight: '800' },
   avatarEditBadge: {
     position: 'absolute', bottom: 0, right: 0,
     width: 28, height: 28, borderRadius: 14,
@@ -320,55 +266,61 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  username: { color: '#F1F5F9', fontSize: 20, fontWeight: '800' },
-  bio: { color: '#64748B', fontSize: 14, marginTop: 4, textAlign: 'center' },
-  verifyBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: 12, backgroundColor: '#1E293B',
-    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7,
+  usernameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  username: { color: '#F1F5F9', fontSize: 22, fontWeight: '800' },
+  bio: { color: '#94A3B8', fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20, maxWidth: 320 },
+
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 12 },
+  badgeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#1E293B', borderRadius: 14,
+    paddingHorizontal: 10, paddingVertical: 5,
     borderWidth: 1, borderColor: '#334155',
   },
-  verifyBtnIcon: { marginRight: 6 },
-  verifyBtnText: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
-  verifyArrow: { marginLeft: 4 },
+  badgeText: { color: '#F1F5F9', fontSize: 12, fontWeight: '600' },
+
   stats: {
     flexDirection: 'row',
-    marginHorizontal: 16, marginBottom: 8,
+    marginHorizontal: 16, marginTop: 8,
     backgroundColor: '#1E293B', borderRadius: 12,
     borderWidth: 1, borderColor: '#334155',
   },
-  statBox: { flex: 1, alignItems: 'center', padding: 16, borderRightWidth: 1, borderRightColor: '#334155' },
+  statBox: { flex: 1, alignItems: 'center', padding: 16 },
+  statDivider: { width: 1, backgroundColor: '#334155' },
   statValue: { color: '#F1F5F9', fontSize: 22, fontWeight: '800' },
   statLabel: { color: '#64748B', fontSize: 12, marginTop: 2 },
   statSub: { color: '#475569', fontSize: 10 },
-  section: { marginHorizontal: 16, marginTop: 16 },
+
+  section: { marginHorizontal: 16, marginTop: 20 },
   sectionTitle: { color: '#64748B', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
-  settingsList: {
+  metricsList: {
     backgroundColor: '#1E293B', borderRadius: 12,
     borderWidth: 1, borderColor: '#334155', overflow: 'hidden',
   },
-  menuItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, borderBottomWidth: 1, borderBottomColor: '#334155',
-    backgroundColor: '#1E293B', borderRadius: 0,
+  metricRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#334155',
   },
-  menuItemContent: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  menuItemLast: { borderBottomWidth: 0 },
-  menuItemText: { color: '#F1F5F9', fontSize: 14 },
-  menuItemDanger: { borderBottomWidth: 0 },
-  menuItemDangerText: { color: '#EF4444', fontSize: 14, fontWeight: '600' },
-  version: { color: '#475569', fontSize: 11, textAlign: 'center', marginTop: 24 },
-  repBar: {
-    height: 10, borderRadius: 5, flexDirection: 'row',
-    overflow: 'hidden', backgroundColor: '#334155',
+  metricRowLast: { borderBottomWidth: 0 },
+  metricLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  metricDot: { width: 10, height: 10, borderRadius: 5 },
+  metricLabelText: { color: '#F1F5F9', fontSize: 14 },
+  metricValue: { color: '#F1F5F9', fontSize: 16, fontWeight: '700' },
+  statsLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 10,
+    backgroundColor: '#1E293B', borderRadius: 12,
+    borderWidth: 1, borderColor: '#334155',
+    padding: 12,
   },
+  statsLinkText: { color: '#F1F5F9', fontSize: 14, fontWeight: '600', flex: 1 },
+
+  repBar: { height: 10, borderRadius: 5, flexDirection: 'row', overflow: 'hidden', backgroundColor: '#334155' },
   repPositive: { backgroundColor: '#4ADE80' },
   repNegative: { backgroundColor: '#EF4444' },
   repLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   repLabelItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   repPositiveText: { color: '#4ADE80', fontSize: 12 },
   repNegativeText: { color: '#EF4444', fontSize: 12 },
-  settingRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  settingValue: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  menuItemSub: { color: '#64748B', fontSize: 12, marginTop: 2 },
 });

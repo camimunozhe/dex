@@ -185,6 +185,7 @@ type SaveCtx = { total: number; saving: boolean; save: () => void };
 
 export default function AddCardScreen() {
   const { user, profile } = useAuth();
+  const dialog = useDialog();
   const currency = profile?.currency ?? 'usd';
   const router = useRouter();
   const navigation = useNavigation();
@@ -234,7 +235,7 @@ export default function AddCardScreen() {
 
   // Maneja el botón back de Android (hardware)
   usePreventRemove(inWizard && !saved, () => {
-    setStack(s => s.slice(0, -1));
+    attemptPop();
   });
 
   useEffect(() => {
@@ -245,9 +246,29 @@ export default function AddCardScreen() {
     setStack(s => [...s, page]);
   }
 
-  function pop() {
+  function popUnchecked() {
     if (stack.length <= 1) { router.back(); return; }
     setStack(s => s.slice(0, -1));
+  }
+
+  function attemptPop() {
+    const pending = saveCtx?.total ?? 0;
+    if (pending > 0) {
+      dialog.confirm({
+        title: 'Cartas sin guardar',
+        message: `Tienes ${pending} ${pending === 1 ? 'carta seleccionada' : 'cartas seleccionadas'} sin guardar. Si sales se perderán.`,
+        confirmText: 'Salir sin guardar',
+        cancelText: 'Seguir editando',
+        destructive: true,
+        onConfirm: () => popUnchecked(),
+      });
+      return;
+    }
+    popUnchecked();
+  }
+
+  function pop() {
+    attemptPop();
   }
 
   function onSave() {
