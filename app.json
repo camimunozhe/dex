@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trocora",
     "slug": "trocora-app",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -69,7 +69,7 @@
         "projectId": "960bb013-816a-4aa1-8559-16b7cdac6842"
       },
       "revenuecat": {
-        "ios": "test_xhFAGCpqdonmUzOpszcDXdbmClO",
+        "ios": "appl_WqOrFyoTVotHNDWQeYgFkvyYNmZ",
         "android": "test_xhFAGCpqdonmUzOpszcDXdbmClO"
       }
     },
